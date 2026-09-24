@@ -212,7 +212,7 @@ final class DownloadStore {
             poller.cancel()
 
             let files = (result["files"] as? [String] ?? []).map { URL(fileURLWithPath: $0) }
-            let title = result["title"] as? String ?? item.title
+            let title = (result["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? item.title
             let destination: URL
             if files.count >= 2 {
                 update(id) { $0.state = .merging }
@@ -222,7 +222,7 @@ final class DownloadStore {
                 try await MediaMerger.merge(
                     video: files[0], audio: files[1], to: destination, knownDuration: durations.min())
             } else if let file = files.first {
-                let ext = Self.isMPEGTS(file) ? "ts" : file.pathExtension
+                let ext = Self.fileExtension(for: file, isAudio: item.choice.isAudio)
                 destination = Self.uniqueDestination(title: title, ext: ext)
                 try FileManager.default.moveItem(at: file, to: destination)
             } else {
@@ -286,12 +286,19 @@ final class DownloadStore {
         }
     }
 
-    /// Without ffmpeg, HLS streams with MPEG-TS segments are saved as raw TS
-    /// even when yt-dlp names them .mp4; label them honestly.
-    private static func isMPEGTS(_ url: URL) -> Bool {
+    /// The extension to save a single downloaded file under. Without ffmpeg
+    /// nothing gets remuxed, so name files after what they actually contain.
+    private static func fileExtension(for url: URL, isAudio: Bool) -> String {
+        let ext = url.pathExtension.lowercased()
         guard let handle = try? FileHandle(forReadingFrom: url),
-              let data = try? handle.read(upToCount: 189), data.count == 189 else { return false }
-        return data[0] == 0x47 && data[188] == 0x47
+              let head = try? handle.read(upToCount: 189), head.count >= 2 else { return ext }
+        // HLS with MPEG-TS segments: raw TS even when yt-dlp names it .mp4
+        if head.count == 189 && head[0] == 0x47 && head[188] == 0x47 { return "ts" }
+        // Raw AAC (ADTS) audio, e.g. some HLS audio streams
+        if head[0] == 0xFF && head[1] & 0xF6 == 0xF0 { return "aac" }
+        // Audio-only MP4 is conventionally .m4a, which music apps recognise
+        if isAudio && ext == "mp4" { return "m4a" }
+        return ext
     }
 
     private static func uniqueDestination(title: String, ext: String) -> URL {

@@ -16,7 +16,12 @@ struct FormatPicker: View {
                         AsyncImage(url: info.thumbnail) { image in
                             image.resizable().scaledToFill()
                         } placeholder: {
-                            Color.secondary.opacity(0.15)
+                            ZStack {
+                                Color.secondary.opacity(0.15)
+                                Image(systemName: videoChoices.isEmpty ? "music.note" : "film")
+                                    .font(.title2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         .frame(width: 120, height: 68)
                         .clipShape(RoundedRectangle(cornerRadius: 8))

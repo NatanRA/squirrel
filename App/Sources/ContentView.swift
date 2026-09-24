@@ -232,7 +232,7 @@ struct DownloadRow: View {
         case .merging:
             caption("Merging audio and video…")
         case .finished:
-            caption("\(item.choice.label) · \(item.choice.isAudio ? "Audio" : "Video")")
+            caption([item.choice.isAudio ? "Audio" : item.choice.label, fileType].joined(separator: " · "))
         case .cancelled:
             caption("Cancelled")
         case .failed(let message):
@@ -241,6 +241,10 @@ struct DownloadRow: View {
                 .foregroundStyle(.red)
                 .lineLimit(2)
         }
+    }
+
+    private var fileType: String {
+        (item.fileName as NSString?)?.pathExtension.uppercased() ?? (item.choice.isAudio ? "Audio" : "Video")
     }
 
     private func caption(_ text: String) -> some View {

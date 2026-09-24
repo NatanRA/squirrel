@@ -15,6 +15,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import shutil
 import struct
 import threading
@@ -158,25 +159,80 @@ def remove_update(arg: str) -> str:
 
 # region: format presets
 
+# yt-dlp uses None for "unknown" and 'none' for "definitely absent", so a
+# format with unknown codecs (common for direct MP4s, e.g. on X) counts as
+# possibly having both audio and video.
+
 def _size(f):
     return f.get('filesize') or f.get('filesize_approx') or 0
+
+
+def _size_text(*fs):
+    """Human size of the given formats; "~" when any is only an estimate."""
+    total = sum(_size(f) for f in fs)
+    if not total or any(not _size(f) for f in fs):
+        return None
+    approx = any(not f.get('filesize') for f in fs)
+    return ('~' if approx else '') + _human(total)
 
 
 def _is_avc(f):
     return (f.get('vcodec') or '').startswith(('avc1', 'h264'))
 
 
-def _has_video(f):
-    return f.get('vcodec') not in (None, 'none') or (f.get('height') and f.get('acodec') not in (None, 'none') and f.get('vcodec') is None)
+_STANDARD_HEIGHTS = (144, 240, 360, 480, 720, 1080, 1440, 2160, 4320)
 
 
-def _has_audio(f):
-    return f.get('acodec') not in (None, 'none')
+def _resolution(f):
+    """Short side of the frame: 1080 for both 1920x1080 and a vertical 1080x1920."""
+    width, height = f.get('width'), f.get('height')
+    if width and height:
+        return min(width, height)
+    match = re.search(r'\b(\d{3,4})p', f.get('format_note') or '')
+    return int(match.group(1)) if match else (height or 0)
+
+
+def _label(res):
+    """Snap near-standard sizes to their usual name (854x470 is "480p")."""
+    nearest = min(_STANDARD_HEIGHTS, key=lambda h: abs(h - res))
+    return nearest if abs(nearest - res) <= nearest * 0.05 else res
+
+
+def _is_drc(f):
+    # YouTube's dynamic-range-compressed audio: quieter peaks, worse for music
+    return 'drc' in (f.get('format_id') or '').lower() or 'DRC' in (f.get('format_note') or '')
+
+
+def _audio_rank(f):
+    # Direct files with a declared codec over HLS streams (YouTube's HLS audio
+    # downloads as raw AAC that AVFoundation can't open), then original language.
+    return (not _is_drc(f), 'm3u8' not in (f.get('protocol') or ''), f.get('acodec') is not None,
+            f.get('language_preference') or 0, f.get('abr') or f.get('tbr') or 0)
 
 
 def _quality(f):
     # Direct HTTPS beats HLS at equal resolution/fps: one request, known size
-    return (f.get('height') or 0, f.get('fps') or 0, f.get('protocol') == 'https', f.get('tbr') or 0)
+    return (_resolution(f), f.get('fps') or 0, f.get('protocol') == 'https', f.get('tbr') or 0)
+
+
+_CODEC_NAMES = {'avc1': 'H.264', 'h264': 'H.264', 'hvc1': 'HEVC', 'hev1': 'HEVC', 'vp09': 'VP9',
+                'vp9': 'VP9', 'av01': 'AV1', 'mp4a': 'AAC', 'aac': 'AAC', 'opus': 'Opus', 'mp3': 'MP3'}
+
+
+def _codec(codec):
+    if not codec or codec == 'none':
+        return None
+    base = codec.split('.')[0].lower()
+    return _CODEC_NAMES.get(base, base.upper())
+
+
+def _detail(*parts):
+    """Join non-empty parts, dropping repeats such as "MP3 · MP3"."""
+    out = []
+    for part in parts:
+        if part and part.lower() not in (p.lower() for p in out):
+            out.append(part)
+    return ' · '.join(out)
 
 
 def _human(n):
@@ -191,70 +247,64 @@ def _human(n):
 def _presets(info):
     """Build a short list of download choices the app can handle without ffmpeg.
 
-    AVFoundation can only mux H.264 video with AAC audio into MP4, so separate
-    streams are limited to avc1 + m4a. Single-file formats of any codec are
-    always offered as they need no merging.
+    Single files that already contain audio and video are preferred. Otherwise
+    separate streams are merged by the app with AVFoundation, which can only
+    mux H.264 video with AAC audio into MP4.
     """
     formats = [f for f in (info.get('formats') or [info]) if f.get('url') or f.get('manifest_url')]
     # storyboards and other junk
     formats = [f for f in formats if f.get('ext') not in ('mhtml',) and f.get('protocol') != 'mhtml']
 
-    audio_only = [f for f in formats if _has_audio(f) and f.get('vcodec') == 'none']
-    m4a = sorted((f for f in audio_only if f.get('ext') in ('m4a', 'mp4')),
-                 key=lambda f: (f.get('language_preference') or 0, f.get('abr') or f.get('tbr') or 0))
-    best_m4a = m4a[-1] if m4a else None
+    audio_only = [f for f in formats if f.get('vcodec') == 'none' and f.get('acodec') != 'none']
+    video_only = [f for f in formats if f.get('acodec') == 'none' and f.get('vcodec') != 'none' and _resolution(f)]
+    progressive = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') != 'none' and _resolution(f)]
 
-    progressive = [f for f in formats if _has_audio(f) and f.get('vcodec') not in ('none',)]
-    video_only = [f for f in formats if f.get('vcodec') not in (None, 'none') and f.get('acodec') == 'none']
+    m4a = [f for f in audio_only
+           if f.get('ext') in ('m4a', 'mp4') or (f.get('acodec') or '').startswith('mp4a')]
+    best_m4a = max(m4a, key=_audio_rank, default=None)
 
     choices = {}
 
-    def add(key, label, detail, ids, kind, height, ext):
+    def add(res, f, ids, detail):
+        key = f'v{res}'
         if key not in choices:
-            choices[key] = {'id': key, 'label': label, 'detail': detail, 'format_ids': ids,
-                            'kind': kind, 'height': height or 0, 'ext': ext}
-
-    # Merged H.264 + AAC, per resolution
-    if best_m4a:
-        by_height = {}
-        for f in video_only:
-            if _is_avc(f) and f.get('ext') == 'mp4' and f.get('height'):
-                cur = by_height.get(f['height'])
-                if cur is None or _quality(f) > _quality(cur):
-                    by_height[f['height']] = f
-        for h, f in by_height.items():
-            size = _size(f) and _size(f) + _size(best_m4a)
             fps = f' {int(f["fps"])}fps' if (f.get('fps') or 0) > 30 else ''
-            detail = ' · '.join(filter(None, ['MP4', 'H.264', _human(size)]))
-            add(f'v{h}', f'{h}p{fps}', detail, [f['format_id'], best_m4a['format_id']], 'video', h, 'mp4')
+            choices[key] = {'id': key, 'label': f'{_label(res)}p{fps}', 'detail': detail, 'format_ids': ids,
+                            'kind': 'video', 'height': res, 'ext': f.get('ext')}
 
-    # Single-file formats (already contain audio + video)
+    # 1. Single files with audio and video, best per resolution
     for f in sorted(progressive, key=_quality, reverse=True):
-        h = f.get('height') or 0
-        key = f'v{h}' if h else f'p{f["format_id"]}'
-        label = f'{h}p' if h else (f.get('format_note') or f.get('format_id'))
-        codec = (f.get('vcodec') or '').split('.')[0].upper().replace('AVC1', 'H.264') or None
-        detail = ' · '.join(filter(None, [(f.get('ext') or '').upper(), codec, _human(_size(f))]))
-        add(key, label, detail, [f['format_id']], 'video', h, f.get('ext'))
+        add(_resolution(f), f, [f['format_id']],
+            _detail((f.get('ext') or '').upper(), _codec(f.get('vcodec')), _size_text(f)))
+
+    # 2. H.264 + AAC merged by the app, for resolutions not covered above
+    if best_m4a:
+        for f in sorted((f for f in video_only if _is_avc(f) and f.get('ext') == 'mp4'), key=_quality, reverse=True):
+            add(_resolution(f), f, [f['format_id'], best_m4a['format_id']],
+                _detail('MP4', 'H.264', _size_text(f, best_m4a)))
+
+    # 3. Silent videos (e.g. GIF-style posts) have no audio to merge
+    if not audio_only and not progressive:
+        for f in sorted(video_only, key=_quality, reverse=True):
+            add(_resolution(f), f, [f['format_id']],
+                _detail((f.get('ext') or '').upper(), _codec(f.get('vcodec')), 'No audio', _size_text(f)))
 
     video = sorted(choices.values(), key=lambda c: c['height'], reverse=True)
 
     audio = []
-    if best_m4a:
-        abr = best_m4a.get('abr')
-        detail = ' · '.join(filter(None, ['M4A', 'AAC', f'{abr:.0f} kbps' if abr else None, _human(_size(best_m4a))]))
-        audio.append({'id': 'a-m4a', 'label': 'Audio', 'detail': detail,
-                      'format_ids': [best_m4a['format_id']], 'kind': 'audio', 'height': 0, 'ext': 'm4a'})
-    elif audio_only:
-        f = max(audio_only, key=lambda f: f.get('abr') or f.get('tbr') or 0)
-        detail = ' · '.join(filter(None, [(f.get('ext') or '').upper(), (f.get('acodec') or '').split('.')[0], _human(_size(f))]))
-        audio.append({'id': 'a-best', 'label': 'Audio', 'detail': detail,
-                      'format_ids': [f['format_id']], 'kind': 'audio', 'height': 0, 'ext': f.get('ext')})
+    best_audio = best_m4a or max(audio_only, key=_audio_rank, default=None)
+    if best_audio:
+        abr = best_audio.get('abr')
+        ext = 'm4a' if best_audio is best_m4a else best_audio.get('ext')
+        audio.append({'id': 'audio', 'label': 'Audio',
+                      'detail': _detail((ext or '').upper(), _codec(best_audio.get('acodec')),
+                                        f'{abr:.0f} kbps' if abr else None, _size_text(best_audio)),
+                      'format_ids': [best_audio['format_id']], 'kind': 'audio', 'height': 0, 'ext': ext})
 
     if not video and not audio and formats:
-        # Unknown format metadata (common for generic extractors): let yt-dlp pick
-        add('best', 'Best', 'Best single file', ['best'], 'video', 0, info.get('ext'))
-        video = list(choices.values())
+        # No usable format metadata (common for generic extractors): let yt-dlp pick
+        video = [{'id': 'best', 'label': 'Best', 'detail': 'Best single file', 'format_ids': ['best'],
+                  'kind': 'video', 'height': 0, 'ext': info.get('ext')}]
 
     return video + audio
 
@@ -371,6 +421,9 @@ def download(arg: str) -> str:
             before = len(files)
             ydl.format_selector = ydl.build_format_selector(fid)
             result = ydl.process_ie_result(copy.deepcopy(raw), download=True)
+            # Processing fills in fields the raw result lacks, e.g. a placeholder
+            # title for untitled TikToks
+            processed.update(title=result.get('title'), id=result.get('id'))
             if len(files) == before:
                 # Already-downloaded files don't fire a "finished" hook
                 path = (result.get('requested_downloads') or [{}])[0].get('filepath')
@@ -379,6 +432,8 @@ def download(arg: str) -> str:
                 else:
                     raise RuntimeError(logger.lines[-1] if logger.lines else f'Format {fid} failed to download')
         return raw
+
+    processed = {}
 
     def remove_files():
         for f in files:
@@ -402,7 +457,7 @@ def download(arg: str) -> str:
                     remove_files()
             job['status'] = 'finished'
             return _ok(files=files, durations=[_sidx_duration(f) for f in files],
-                       title=raw.get('title'), id=raw.get('id'))
+                       title=processed.get('title') or raw.get('title'), id=processed.get('id') or raw.get('id'))
     except Exception as e:
         if isinstance(e, Cancelled) or job['cancel']:
             job['status'] = 'cancelled'

@@ -55,8 +55,21 @@ struct DownloadItem: Identifiable, Codable {
     var thumbnail: URL?
     var choice: FormatChoice
     var state: State
+    /// Nil when the file was moved into Photos instead of kept in the app.
     var fileName: String?
     var createdAt: Date
+    var savedToPhotos: Bool?
+    /// Why a video wasn't saved to Photos, when saving was on.
+    var photosNote: String?
+}
+
+/// "Saving" settings (see SettingsView).
+enum SaveSettings {
+    static let videosToPhotosKey = "save.videosToPhotos"
+    static let keepCopyKey = "save.keepCopy"
+
+    static var videosToPhotos: Bool { UserDefaults.standard.object(forKey: videosToPhotosKey) as? Bool ?? true }
+    static var keepCopy: Bool { UserDefaults.standard.bool(forKey: keepCopyKey) }
 }
 
 /// Live, non-persisted progress for an active download.
@@ -148,6 +161,10 @@ final class DownloadStore {
         items.insert(item, at: 0)
         save()
         run(item.id)
+        if !choice.isAudio, SaveSettings.videosToPhotos,
+           PHPhotoLibrary.authorizationStatus(for: .addOnly) == .notDetermined {
+            Task { _ = await PHPhotoLibrary.requestAuthorization(for: .addOnly) }
+        }
     }
 
     func retry(_ id: UUID) {
@@ -170,13 +187,37 @@ final class DownloadStore {
 
     func saveToPhotos(_ item: DownloadItem) async throws {
         guard let url = fileURL(for: item) else { return }
+        try await Self.addToPhotos(url, move: false)
+        update(item.id) {
+            $0.savedToPhotos = true
+            $0.photosNote = nil
+        }
+        save()
+    }
+
+    /// Nonisolated: Photos runs the change block on its own queue, and a block
+    /// inheriting this class's main-actor isolation would trap there.
+    nonisolated private static func addToPhotos(_ url: URL, move: Bool) async throws {
         let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
         guard status == .authorized || status == .limited else {
-            throw BridgeError(message: "Allow photo library access in Settings to save videos.")
+            throw BridgeError(message: "Photos access is off. Allow it in Settings › Apps › yt-dlp › Photos.")
         }
-        try await PHPhotoLibrary.shared().performChanges {
-            PHAssetCreationRequest.creationRequestForAssetFromVideo(atFileURL: url)
+        try await PHPhotoLibrary.shared().performChanges { @Sendable in
+            let options = PHAssetResourceCreationOptions()
+            options.shouldMoveFile = move  // no second copy of large files
+            PHAssetCreationRequest.forAsset().addResource(with: .video, fileURL: url, options: options)
         }
+    }
+
+    /// Why Photos can't take this video, if it can't.
+    private static func photosIncompatibility(of url: URL, choice: FormatChoice) -> String? {
+        guard ["mp4", "mov", "m4v"].contains(url.pathExtension.lowercased()) else {
+            return "Photos can't store .\(url.pathExtension) videos."
+        }
+        if choice.playable == false {
+            return "Photos can't play this format on this device."
+        }
+        return nil
     }
 
     // MARK: - Download pipeline
@@ -238,10 +279,29 @@ final class DownloadStore {
                     title: title, ext: Self.fileExtension(for: files[0], isAudio: item.choice.isAudio))
                 try FileManager.default.moveItem(at: files[0], to: destination)
             }
+            var fileName: String? = destination.lastPathComponent
+            var savedToPhotos = false
+            var photosNote: String?
+            if !item.choice.isAudio && SaveSettings.videosToPhotos {
+                if let reason = Self.photosIncompatibility(of: destination, choice: item.choice) {
+                    photosNote = reason
+                } else {
+                    do {
+                        let keepCopy = SaveSettings.keepCopy
+                        try await Self.addToPhotos(destination, move: !keepCopy)
+                        savedToPhotos = true
+                        if !keepCopy { fileName = nil }
+                    } catch {
+                        photosNote = error.localizedDescription  // the file stays in the app
+                    }
+                }
+            }
             update(id) {
                 $0.state = .finished
                 $0.title = title
-                $0.fileName = destination.lastPathComponent
+                $0.fileName = fileName
+                $0.savedToPhotos = savedToPhotos
+                $0.photosNote = photosNote
             }
         } catch let error as BridgeError where error.cancelled {
             update(id) { $0.state = .cancelled }

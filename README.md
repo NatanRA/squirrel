@@ -57,7 +57,10 @@ run `YTDLP_VERSION=<version> ./scripts/bootstrap.sh` and rebuild. If that releas
 - Paste a link and tap **Download**, then pick a format.
 - Tap a finished download to play it. Long-press for **Share**, **Save to Photos**, **Retry**, or
   **Delete**.
-- Files appear under *Files → On My iPhone → yt-dlp*.
+- Videos are saved straight to **Photos**. They're moved rather than copied, so large files
+  don't take up space twice. Audio, and videos Photos can't play (like 4K AV1 on iPhones without
+  AV1 hardware), stay in the app, under *Files → On My iPhone → yt-dlp*. Settings › Saving can
+  turn this off or keep a copy in the app too.
 - **Share-sheet shortcut:** in Shortcuts, create a shortcut that receives URLs from the share sheet
   and runs *Open URL* with `ytdlp://download?url=` followed by the *Shortcut Input* variable. The
   app then opens with that link already loaded.

@@ -12,10 +12,13 @@ struct SettingsView: View {
     @State private var showingImporter = false
     @State private var confirmRemoveAll = false
     @State private var alert: AlertMessage?
+    @AppStorage(SaveSettings.videosToPhotosKey) private var videosToPhotos = true
+    @AppStorage(SaveSettings.keepCopyKey) private var keepCopy = false
 
     var body: some View {
         NavigationStack {
             Form {
+                savingSection
                 updatesSection
                 accountsSection
                 Section {
@@ -55,6 +58,20 @@ struct SettingsView: View {
                 Button("Sign Out of All", role: .destructive) { Task { await cookies.removeAll() } }
             }
             .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
+        }
+    }
+
+    // MARK: - Saving
+
+    private var savingSection: some View {
+        Section {
+            Toggle("Save Videos to Photos", isOn: $videosToPhotos)
+            Toggle("Keep a Copy in the App", isOn: $keepCopy)
+                .disabled(!videosToPhotos)
+        } header: {
+            Text("Saving")
+        } footer: {
+            Text("Audio stays in the app and in Files › yt-dlp. So do videos Photos can't play, like 4K AV1 on older iPhones.")
         }
     }
 

@@ -4,6 +4,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(DownloadStore.self) private var store
     @State private var showingSettings = false
+    @AppStorage(SaveSettings.videosToPhotosKey) private var videosToPhotos = true
     @State private var urlText = ""
     @State private var isFetching = false
     @State private var info: VideoInfo?
@@ -34,7 +35,9 @@ struct ContentView: View {
                     if let error = store.startupError {
                         Text(error).foregroundStyle(.red)
                     } else if let version = store.ytdlpVersion {
-                        Text("yt-dlp \(UpdateManager.display(version)) · Files are saved to the yt-dlp folder in the Files app.")
+                        Text("yt-dlp \(UpdateManager.display(version)) · " + (videosToPhotos
+                            ? "Videos are saved to Photos, audio to Files › yt-dlp."
+                            : "Files are saved to Files › yt-dlp."))
                     } else {
                         Text("Starting yt-dlp…")
                     }
@@ -117,7 +120,7 @@ struct ContentView: View {
     private func menu(for item: DownloadItem) -> some View {
         if item.state == .finished, let url = store.fileURL(for: item) {
             ShareLink(item: url)
-            if !item.choice.isAudio {
+            if !item.choice.isAudio && item.savedToPhotos != true {
                 Button {
                     Task {
                         do {
@@ -146,7 +149,14 @@ struct ContentView: View {
         } label: {
             Label("Copy Link", systemImage: "link")
         }
-        Button(role: .destructive) { store.delete(item.id) } label: { Label("Delete", systemImage: "trash") }
+        Button(role: .destructive) { store.delete(item.id) } label: {
+            // Videos moved into Photos stay there; this only clears the row
+            if item.fileName == nil && item.state == .finished {
+                Label("Remove from List", systemImage: "trash")
+            } else {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     private var trimmedURL: String {
@@ -171,7 +181,11 @@ struct ContentView: View {
     private func open(_ item: DownloadItem) {
         switch item.state {
         case .finished:
-            previewURL = store.fileURL(for: item)
+            if let url = store.fileURL(for: item) {
+                previewURL = url
+            } else if item.savedToPhotos == true, let photos = URL(string: "photos-redirect://") {
+                UIApplication.shared.open(photos)
+            }
         case .failed(let message):
             alert = AlertMessage(title: "Download Failed", message: message)
         default:
@@ -232,7 +246,12 @@ struct DownloadRow: View {
         case .merging:
             caption((live?.parts ?? 1) > 1 ? "Merging audio and video…" : "Finishing…")
         case .finished:
-            caption([item.choice.isAudio ? "Audio" : item.choice.label, fileType].joined(separator: " · "))
+            VStack(alignment: .leading, spacing: 2) {
+                caption([item.choice.isAudio ? "Audio" : item.choice.label, location].joined(separator: " · "))
+                if let note = item.photosNote {
+                    Text(note).font(.caption2).foregroundStyle(.orange).lineLimit(2)
+                }
+            }
         case .cancelled:
             caption("Cancelled")
         case .failed(let message):
@@ -240,6 +259,14 @@ struct DownloadRow: View {
                 .font(.caption)
                 .foregroundStyle(.red)
                 .lineLimit(2)
+        }
+    }
+
+    private var location: String {
+        switch (item.savedToPhotos == true, item.fileName != nil) {
+        case (true, false): "Saved to Photos"
+        case (true, true): "\(fileType) · In Photos"
+        default: fileType
         }
     }
 

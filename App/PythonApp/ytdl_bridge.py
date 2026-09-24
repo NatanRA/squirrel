@@ -15,55 +15,20 @@ from __future__ import annotations
 import copy
 import json
 import os
+import shutil
 import struct
 import threading
 import traceback
 
-import _iosbridge
+import ytdl_updater
 
-import yt_dlp
-from yt_dlp.extractor.youtube.jsc._builtin.ejs import EJSBaseJCP
-from yt_dlp.extractor.youtube.jsc.provider import (
-    JsChallengeProviderError,
-    register_preference,
-    register_provider,
-)
-from yt_dlp.extractor.youtube.pot._provider import BuiltinIEContentProvider
-from yt_dlp.globals import supported_js_runtimes
-from yt_dlp.utils._jsruntime import JsRuntime, JsRuntimeInfo
+# Prefers an over-the-air update; also registers the JavaScriptCore provider.
+ytdl_updater.load_ytdlp()
+
+import yt_dlp  # noqa: E402
 
 
-# region: JavaScriptCore challenge solver
-
-class JavaScriptCoreRuntime(JsRuntime):
-    def _info(self):
-        return JsRuntimeInfo(
-            name='javascriptcore', path='builtin', version='1.0', version_tuple=(1, 0))
-
-
-supported_js_runtimes.value['jsc'] = JavaScriptCoreRuntime
-
-
-@register_provider
-class JavaScriptCoreJCP(EJSBaseJCP, BuiltinIEContentProvider):
-    PROVIDER_NAME = 'javascriptcore'
-    JS_RUNTIME_NAME = 'jsc'
-
-    def _run_js_runtime(self, stdin: str, /) -> str:
-        try:
-            return _iosbridge.run_js(stdin)
-        except RuntimeError as e:
-            raise JsChallengeProviderError(f'JavaScriptCore error: {e}') from e
-
-
-@register_preference(JavaScriptCoreJCP)
-def _jsc_preference(provider, requests):
-    return 900
-
-# endregion
-
-
-_config = {'cache_dir': None}
+_config = {'cache_dir': None, 'cookie_file': None}
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 
@@ -112,6 +77,13 @@ def _base_opts(logger):
     }
     if _config['cache_dir']:
         opts['cachedir'] = _config['cache_dir']
+    cookie_file = _config.get('cookie_file')
+    if cookie_file and os.path.exists(cookie_file) and _config.get('cache_dir'):
+        # yt-dlp writes the jar back on exit; give it a private copy so the
+        # app's cookie file is never clobbered by concurrent jobs.
+        copy_path = os.path.join(_config['cache_dir'], f'cookies-{threading.get_ident()}.txt')
+        shutil.copyfile(cookie_file, copy_path)
+        opts['cookiefile'] = copy_path
     return opts
 
 
@@ -142,6 +114,46 @@ def configure(arg: str) -> str:
     if _config.get('cache_dir'):
         os.makedirs(_config['cache_dir'], exist_ok=True)
     return _ok(version=yt_dlp.version.__version__)
+
+
+# region: updates
+
+def update_status(arg: str) -> str:
+    return _ok(
+        version=yt_dlp.version.__version__,
+        source=ytdl_updater.load_state['source'],
+        load_error=ytdl_updater.load_state['error'],
+        bundled_version=ytdl_updater.bundled_version(),
+        pending_version=ytdl_updater.installed_update_version(),
+    )
+
+
+def check_update(arg: str) -> str:
+    params = json.loads(arg)
+    try:
+        latest = ytdl_updater.latest_version(nightly=params.get('nightly', False))
+        # Compare with whatever will load next launch, not just what's running now.
+        baseline = ytdl_updater.installed_update_version() or yt_dlp.version.__version__
+        newer = ytdl_updater.version_tuple(latest) > ytdl_updater.version_tuple(baseline)
+        return _ok(latest=latest, current=yt_dlp.version.__version__, available=newer)
+    except Exception as e:
+        return _err(e)
+
+
+def install_update(arg: str) -> str:
+    params = json.loads(arg)
+    try:
+        ytdl_updater.install(params['version'])
+        return _ok(version=params['version'])
+    except Exception as e:
+        return _err(e)
+
+
+def remove_update(arg: str) -> str:
+    ytdl_updater.remove()
+    return _ok(bundled_version=ytdl_updater.bundled_version())
+
+# endregion
 
 
 # region: format presets

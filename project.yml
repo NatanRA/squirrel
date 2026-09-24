@@ -65,6 +65,10 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
         NSPhotoLibraryAddUsageDescription: Save downloaded videos to your photo library.
         ITSAppUsesNonExemptEncryption: false
+        # iOS 26 continued-processing tasks for downloads (see BackgroundContinuation.swift)
+        BGTaskSchedulerPermittedIdentifiers:
+          - $(PRODUCT_BUNDLE_IDENTIFIER).download.*
+        UIBackgroundModes: [processing]
         CFBundleURLTypes:
           - CFBundleURLName: com.natan.ytdlp
             CFBundleURLSchemes: [ytdlp]

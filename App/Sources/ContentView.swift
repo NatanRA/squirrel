@@ -3,6 +3,8 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(DownloadStore.self) private var store
+    @Environment(UpdateManager.self) private var updates
+    @State private var showingSettings = false
     @State private var urlText = ""
     @State private var isFetching = false
     @State private var info: VideoInfo?
@@ -32,8 +34,11 @@ struct ContentView: View {
                 } footer: {
                     if let error = store.startupError {
                         Text(error).foregroundStyle(.red)
+                    } else if let latest = updates.availableVersion {
+                        Button("yt-dlp \(UpdateManager.display(latest)) is available. Update in Settings.") { showingSettings = true }
+                            .font(.footnote)
                     } else if let version = store.ytdlpVersion {
-                        Text("yt-dlp \(version) · Files are saved to the yt-dlp folder in the Files app.")
+                        Text("yt-dlp \(UpdateManager.display(version)) · Files are saved to the yt-dlp folder in the Files app.")
                     } else {
                         Text("Starting yt-dlp…")
                     }
@@ -62,6 +67,14 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("yt-dlp")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingSettings = true } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingSettings) { SettingsView() }
             .scrollDismissesKeyboard(.immediately)
             .sheet(item: $info) { info in
                 FormatPicker(info: info) { choice in
@@ -218,7 +231,7 @@ struct DownloadRow: View {
                 } else {
                     ProgressView(value: 0).opacity(0.4)
                 }
-                caption(progressText)
+                caption(live?.summary ?? "Downloading…")
             }
         case .merging:
             caption("Merging audio and video…")
@@ -232,24 +245,6 @@ struct DownloadRow: View {
                 .foregroundStyle(.red)
                 .lineLimit(2)
         }
-    }
-
-    private var progressText: String {
-        guard let live else { return "Downloading…" }
-        var parts: [String] = []
-        if live.parts > 1 {
-            parts.append(live.part == 1 ? "Video" : "Audio")
-        }
-        let bytes = ByteCountFormatter.string(fromByteCount: Int64(live.downloaded), countStyle: .file)
-        if live.total > 0 {
-            parts.append("\(bytes) of \(ByteCountFormatter.string(fromByteCount: Int64(live.total), countStyle: .file))")
-        } else {
-            parts.append(bytes)
-        }
-        if live.speed > 0 {
-            parts.append("\(ByteCountFormatter.string(fromByteCount: Int64(live.speed), countStyle: .file))/s")
-        }
-        return parts.joined(separator: " · ")
     }
 
     private func caption(_ text: String) -> some View {

@@ -24,14 +24,18 @@ actor PythonRuntime {
     func start() async throws -> String {
         if startTask == nil {
             startTask = Task.detached(priority: .userInitiated) {
-                let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-                var settings: [String: Any] = ["cache_dir": caches.appendingPathComponent("yt-dlp").path]
+                var settings: [String: Any] = [
+                    "cache_dir": AppPaths.ytdlpCache.path,
+                    "cookie_file": CookieStore.cookieFile.path,
+                ]
                 #if DEBUG
                 settings["verbose"] = true
                 #endif
                 let config = try Self.encode(settings)
                 let json = try await Self.onPythonThread {
                     pybridge_set_js_runner(jsRunner)
+                    // Read by ytdl_updater.py before yt-dlp is imported.
+                    setenv("YTDL_UPDATE_DIR", AppPaths.pythonUpdates.path, 1)
                     if let error = pybridge_initialize(Bundle.main.resourcePath!) {
                         defer { free(error) }
                         throw BridgeError(message: "Python failed to start: \(String(cString: error))")

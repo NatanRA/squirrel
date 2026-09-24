@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 import Photos
-import UIKit
 
 struct FormatChoice: Identifiable, Hashable, Codable {
     let id: String
@@ -71,6 +70,24 @@ struct LiveProgress {
         // Spread multi-part downloads (video, then audio) across one bar.
         return (Double(part - 1) + min(downloaded / total, 1)) / Double(max(parts, 1))
     }
+
+    /// "Video · 12.3 MB of 45 MB · 2.1 MB/s"
+    var summary: String {
+        var parts: [String] = []
+        if self.parts > 1 {
+            parts.append(part == 1 ? "Video" : "Audio")
+        }
+        let bytes = ByteCountFormatter.string(fromByteCount: Int64(downloaded), countStyle: .file)
+        if total > 0 {
+            parts.append("\(bytes) of \(ByteCountFormatter.string(fromByteCount: Int64(total), countStyle: .file))")
+        } else {
+            parts.append(bytes)
+        }
+        if speed > 0 {
+            parts.append("\(ByteCountFormatter.string(fromByteCount: Int64(speed), countStyle: .file))/s")
+        }
+        return parts.joined(separator: " · ")
+    }
 }
 
 @MainActor
@@ -82,12 +99,7 @@ final class DownloadStore {
     private(set) var startupError: String?
 
     @ObservationIgnored private var tasks: [UUID: Task<Void, Never>] = [:]
-
-    static let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    private static let libraryFile = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("library.json")
-    private static let workRoot = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("work", isDirectory: true)
+    @ObservationIgnored private var continuations: [UUID: BackgroundContinuation] = [:]
 
     init() {
         load()
@@ -95,7 +107,7 @@ final class DownloadStore {
         for index in items.indices where items[index].state.isActive {
             items[index].state = .failed("Interrupted")
         }
-        try? FileManager.default.removeItem(at: Self.workRoot)
+        try? FileManager.default.removeItem(at: AppPaths.downloadWork)
     }
 
     func startPython() async {
@@ -107,7 +119,7 @@ final class DownloadStore {
     }
 
     func fileURL(for item: DownloadItem) -> URL? {
-        item.fileName.map { Self.documents.appendingPathComponent($0) }
+        item.fileName.map { AppPaths.documents.appendingPathComponent($0) }
     }
 
     // MARK: - Actions
@@ -173,11 +185,11 @@ final class DownloadStore {
     private func perform(_ id: UUID) async {
         guard let item = items.first(where: { $0.id == id }) else { return }
         let jobID = id.uuidString
-        let workDir = Self.workRoot.appendingPathComponent(jobID, isDirectory: true)
+        let workDir = AppPaths.downloadWork.appendingPathComponent(jobID, isDirectory: true)
 
-        // Ask iOS for extra time if the user leaves the app mid-download.
-        let background = UIApplication.shared.beginBackgroundTask(withName: "download \(jobID)")
-        defer { UIApplication.shared.endBackgroundTask(background) }
+        // Keep going if the user leaves the app mid-download.
+        let continuation = BackgroundContinuation(title: item.title) { [weak self] in self?.cancel(id) }
+        continuations[id] = continuation
 
         update(id) { $0.state = .extracting }
         live[id] = LiveProgress(parts: item.choice.formatIDs.count)
@@ -204,6 +216,7 @@ final class DownloadStore {
             let destination: URL
             if files.count >= 2 {
                 update(id) { $0.state = .merging }
+                continuation.update(fraction: 1, subtitle: "Merging audio and video…")
                 destination = Self.uniqueDestination(title: title, ext: "mp4")
                 let durations = (result["durations"] as? [Any] ?? []).compactMap { $0 as? Double }
                 try await MediaMerger.merge(
@@ -228,6 +241,8 @@ final class DownloadStore {
 
         poller.cancel()
         try? FileManager.default.removeItem(at: workDir)
+        continuation.finish(success: items.first { $0.id == id }?.state == .finished)
+        continuations[id] = nil
         live[id] = nil
         tasks[id] = nil
         save()
@@ -242,6 +257,7 @@ final class DownloadStore {
         current.part = progress["part"] as? Int ?? current.part
         current.parts = progress["parts"] as? Int ?? current.parts
         live[id] = current
+        continuations[id]?.update(fraction: current.fraction, subtitle: current.summary)
         if status == "downloading", items.first(where: { $0.id == id })?.state == .extracting {
             update(id) { $0.state = .downloading }
         }
@@ -255,7 +271,7 @@ final class DownloadStore {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: Self.libraryFile),
+        guard let data = try? Data(contentsOf: AppPaths.library),
               let decoded = try? JSONDecoder().decode([DownloadItem].self, from: data) else { return }
         items = decoded
     }
@@ -263,8 +279,8 @@ final class DownloadStore {
     private func save() {
         do {
             try FileManager.default.createDirectory(
-                at: Self.libraryFile.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(items).write(to: Self.libraryFile, options: .atomic)
+                at: AppPaths.library.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(items).write(to: AppPaths.library, options: .atomic)
         } catch {
             print("Failed to save library: \(error)")
         }
@@ -285,10 +301,10 @@ final class DownloadStore {
         if base.isEmpty { base = "Download" }
         base = String(base.prefix(120))
 
-        var url = documents.appendingPathComponent("\(base).\(ext)")
+        var url = AppPaths.documents.appendingPathComponent("\(base).\(ext)")
         var counter = 2
         while FileManager.default.fileExists(atPath: url.path) {
-            url = documents.appendingPathComponent("\(base) (\(counter)).\(ext)")
+            url = AppPaths.documents.appendingPathComponent("\(base) (\(counter)).\(ext)")
             counter += 1
         }
         return url

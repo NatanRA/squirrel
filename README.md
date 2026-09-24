@@ -11,9 +11,13 @@ folder in the Files app. From there you can share it or save it to Photos.
 | `Vendor/Python.xcframework` | CPython 3.14 for iOS from [BeeWare's Python-Apple-support](https://github.com/beeware/Python-Apple-support) |
 | `Vendor/app_packages` | `yt-dlp`, `yt-dlp-ejs` (YouTube challenge solver scripts) and `certifi`, precompiled to bytecode |
 | `App/Bridge/PyBridge.c` | Starts the interpreter, calls into Python from any thread, and exposes `_iosbridge.run_js` |
-| `App/PythonApp/ytdl_bridge.py` | JSON API used by the app: `extract`, `download`, `progress`, `cancel` |
+| `App/PythonApp/ytdl_bridge.py` | JSON API used by the app: `extract`, `download`, `progress`, `cancel`, updates |
+| `App/PythonApp/jsc_provider.py` | yt-dlp JS challenge provider backed by JavaScriptCore |
+| `App/PythonApp/ytdl_updater.py` | Installs newer yt-dlp releases from PyPI, with fallback to the built-in copy |
 | `App/Sources/PythonRuntime.swift` | Swift side of the bridge, plus the **JavaScriptCore** runner |
 | `App/Sources/MediaMerger.swift` | Muxes separate video and audio streams with AVFoundation |
+| `App/Sources/BackgroundContinuation.swift` | Keeps downloads running in the background (iOS 26+) |
+| `App/Sources/CookieStore.swift`, `SignInView.swift` | In-app sign-in and cookies.txt import for sites that need an account |
 
 iOS apps can't spawn subprocesses, which rules out two things yt-dlp normally depends on:
 
@@ -39,9 +43,9 @@ The IPA is ad-hoc signed. Install it with AltStore, SideStore, Sideloadly, or Tr
 re-sign it with your Apple ID. To run from Xcode instead, run `xcodegen generate`, open
 `YTDL.xcodeproj`, pick your team under Signing, and run.
 
-To update yt-dlp (YouTube breaks things often), run
-`YTDLP_VERSION=<new version> ./scripts/bootstrap.sh`, then rebuild. If a new yt-dlp release
-requires a new `yt-dlp-ejs`, set `EJS_VERSION` too.
+The app updates yt-dlp by itself (see below). To change the version bundled in the IPA instead,
+run `YTDLP_VERSION=<version> ./scripts/bootstrap.sh` and rebuild. If that release needs a new
+`yt-dlp-ejs`, set `EJS_VERSION` too.
 
 ## Using it
 
@@ -53,14 +57,31 @@ requires a new `yt-dlp-ejs`, set `EJS_VERSION` too.
   and runs *Open URL* with `ytdlp://download?url=` followed by the *Shortcut Input* variable. The
   app then opens with that link already loaded.
 
+### Settings (gear icon)
+
+- **Updates.** The app checks PyPI once a day and offers newer yt-dlp releases. Installing one
+  downloads and checksum-verifies the wheels into the app's storage, and the new version is used
+  after the app restarts. Turn on **Nightly Builds** to get YouTube fixes before they reach a
+  stable release. If an update fails to load, the app falls back to the built-in version and says
+  so. **Revert to Built-in Version** removes the update. yt-dlp is pure Python, so this needs no
+  rebuild or re-signing. It would not be allowed on the App Store.
+- **Accounts.** **Sign In to a Site** opens an in-app browser. Log in and tap **Done**, and the
+  site's cookies are saved for yt-dlp. **Import cookies.txt** accepts a Netscape-format cookie
+  export from a desktop browser. Swipe a site to sign out. YouTube may flag accounts used with
+  yt-dlp, so use a spare account there.
+
 ## Limitations
 
-- Downloads only continue for a short time after the app leaves the foreground, because iOS
-  suspends it. Keep the app open for long downloads.
+- **Background downloads** keep running after you leave the app on **iOS 26+**, with a
+  system progress indicator. You or the system can stop them from there. On older iOS versions,
+  downloads get about 30 seconds after the app leaves the screen. The iOS 26 path can't run in
+  the Simulator, so it needs testing on a real device. Some sideloading tools (e.g. AltStore)
+  rewrite the bundle ID. That disables this feature, because the permitted task identifier no
+  longer matches, and downloads fall back to the 30-second behaviour.
+- **Google may refuse sign-in** inside the in-app browser. If that happens, export cookies from a
+  desktop browser and use **Import cookies.txt**.
 - Formats that would need ffmpeg (VP9/AV1 merges, remuxing HLS MPEG-TS to MP4, embedding
   subtitles or thumbnails) aren't available. MPEG-TS HLS downloads are saved as `.ts`, which VLC or
   Infuse can play.
-- Sites that require login (for example Vimeo) will fail, because the app has no cookie support
-  yet.
 - The last failure's full yt-dlp log is saved to `Library/Caches/yt-dlp/last_error.log`. Debug
   builds also log yt-dlp's verbose output.

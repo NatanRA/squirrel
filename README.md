@@ -1,98 +1,113 @@
-# yt-dlp for iOS
+# yt-dlp for iOS and Android
 
-A native SwiftUI wrapper that runs the real [yt-dlp](https://github.com/yt-dlp/yt-dlp) on-device,
-with no server involved. You can paste a link, pick a quality, and the file is saved to the app's
-folder in the Files app. From there you can share it or save it to Photos.
+Native apps that run the real [yt-dlp](https://github.com/yt-dlp/yt-dlp) on the phone, with no
+server involved. You paste or share a link, pick a quality (up to 4K) or audio only, and the file
+lands in Photos/Gallery or your music folder.
+
+| | iOS | Android |
+|---|---|---|
+| UI | SwiftUI | Jetpack Compose (Material You) |
+| Python | CPython 3.14 via [Python-Apple-support](https://github.com/beeware/Python-Apple-support) | CPython 3.14 via [Chaquopy](https://chaquo.com/chaquopy/) |
+| YouTube's JS challenges | JavaScriptCore | V8 via Jetpack JavaScriptEngine |
+| Merging streams | Embedded FFmpeg (remux only) | Same FFmpeg code via JNI |
+| Where files go | Photos (videos), Files › yt-dlp (audio) | Movies/yt-dlp (Gallery), Music/yt-dlp |
+| Background downloads | iOS 26+ continued-processing task | Foreground service with progress notification |
+| Getting links in | Paste, `ytdlp://` URL, Shortcuts | Paste, **share sheet**, `ytdlp://` URL |
+| Package | Ad-hoc signed IPA (~25 MB) | APK per CPU type (~21 MB) |
+
+## Layout
+
+```
+shared/pybridge/   Python used by both apps
+  ytdl_bridge.py     JSON API the apps call: extract, download, progress, cancel, updates
+  jsc_provider.py    yt-dlp JS challenge provider that calls the host's JS engine via `_host`
+  ytdl_updater.py    Installs newer yt-dlp releases from PyPI, falling back to the built-in copy
+shared/native/     C used by both apps
+  Remux.c            Merges/rewraps streams into one file with FFmpeg's libraries, no re-encoding
+ios/               Xcode project (XcodeGen), Swift sources, build scripts
+android/           Gradle project, Kotlin sources, JNI glue, build scripts
+```
+
+Each app provides a small `_host` module that the shared bridge calls to run JavaScript:
+`ios/App/Bridge/PyBridge.c` (JavaScriptCore) and `android/app/src/main/python/_host.py` (V8).
 
 ## How it works
 
-| Piece | What it does |
-|---|---|
-| `Vendor/Python.xcframework` | CPython 3.14 for iOS from [BeeWare's Python-Apple-support](https://github.com/beeware/Python-Apple-support) |
-| `Vendor/app_packages` | `yt-dlp`, `yt-dlp-ejs` (YouTube challenge solver scripts) and `certifi`, precompiled to bytecode |
-| `ios/App/Bridge/PyBridge.c` | Starts the interpreter, calls into Python from any thread, and exposes `_host.run_js` |
-| `shared/pybridge/ytdl_bridge.py` | JSON API used by the app: `extract`, `download`, `progress`, `cancel`, updates |
-| `shared/pybridge/jsc_provider.py` | yt-dlp JS challenge provider backed by JavaScriptCore |
-| `shared/pybridge/ytdl_updater.py` | Installs newer yt-dlp releases from PyPI, with fallback to the built-in copy |
-| `ios/App/Sources/PythonRuntime.swift` | Swift side of the bridge, plus the **JavaScriptCore** runner |
-| `Vendor/FFmpeg.xcframework` | Minimal FFmpeg (remux only: no encoders/decoders, LGPL-2.1), built by `ios/scripts/build_ffmpeg.sh` |
-| `shared/native/Remux.c`, `ios/App/Sources/Remuxer.swift` | Merges separate video/audio streams and rewraps single files into a clean container |
-| `ios/App/Sources/BackgroundContinuation.swift` | Keeps downloads running in the background (iOS 26+) |
-| `ios/App/Sources/CookieStore.swift`, `SignInView.swift` | In-app sign-in and cookies.txt import for sites that need an account |
+Phones can't run yt-dlp the way desktops do, so both apps replace two things it normally shells
+out to:
 
-iOS apps can't spawn subprocesses, which rules out two things yt-dlp normally depends on:
+- **A JavaScript runtime (Deno/Node).** YouTube now requires one to solve its signature and "n"
+  challenges. `jsc_provider.py` registers a yt-dlp challenge provider that runs the official EJS
+  solver in the platform's own engine. Both engines return identical answers on YouTube's current
+  player; V8 takes about 0.3 s and JavaScriptCore about 1 s.
+- **The ffmpeg command-line tool.** yt-dlp downloads the video and audio streams separately, and
+  `Remux.c` merges them with a minimal FFmpeg build that has no encoders or decoders (LGPL-2.1).
+  It also rewraps single files, which fixes broken duration headers and turns HLS/MPEG-TS
+  downloads into normal MP4s. Every codec is available, including YouTube's 1440p and 4K
+  (AV1/VP9 only). Each app reports which codecs its device can play, and the rest are labelled
+  "Plays in VLC". Files are tagged with title, artist, year and source URL.
 
-- **External JS runtime (Deno/Node).** YouTube downloads need a JS runtime to solve the signature
-  and "n" challenges. The bridge registers a custom yt-dlp challenge provider that runs the
-  official EJS solver in the system JavaScriptCore instead, which takes about 2 s per video.
-- **The ffmpeg command-line tool.** Instead, the app embeds FFmpeg's libraries and calls them
-  directly: yt-dlp downloads the video and audio streams separately, and the app remuxes them
-  into one file without re-encoding. It rewraps single files too, which fixes broken duration
-  headers and turns HLS/MPEG-TS downloads into normal MP4s. That makes every codec available,
-  including YouTube's 1440p and 4K (AV1/VP9 only). The app asks VideoToolbox whether the device
-  decodes AV1 in hardware (iPhone 15 Pro and later, M-series iPads), and labels formats Apple's
-  players can't play with "Plays in VLC". Files are tagged with title, artist, year and source URL.
+yt-dlp updates itself: once a day each app checks PyPI, downloads and checksum-verifies any newer
+release into app storage, and uses it from the next launch. yt-dlp is pure Python, so this needs
+no rebuild. The built-in copy stays as a fallback if an update fails to load.
 
-## Build
+## Build: iOS
 
 Requirements: Xcode 16+, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`),
 and a host Python **3.14** (used to precompile bytecode that matches the embedded interpreter).
 
 ```bash
-./ios/scripts/bootstrap.sh     # downloads Python for iOS + yt-dlp into Vendor/
-./ios/scripts/build_ffmpeg.sh  # builds the minimal FFmpeg into Vendor/ (about a minute)
-./ios/scripts/build_ipa.sh     # -> build/YTDL.ipa
+./ios/scripts/bootstrap.sh     # Python for iOS + yt-dlp into ios/Vendor/
+./ios/scripts/build_ffmpeg.sh  # minimal FFmpeg into ios/Vendor/ (about a minute)
+./ios/scripts/build_ipa.sh     # -> ios/build/YTDL.ipa
 ```
 
-The IPA is ad-hoc signed. Install it with AltStore, SideStore, Sideloadly, or TrollStore, which
-re-sign it with your Apple ID. To run from Xcode instead, run `xcodegen generate`, open
-`YTDL.xcodeproj`, pick your team under Signing, and run.
+Install the IPA with AltStore, SideStore, Sideloadly, or TrollStore, which re-sign it with your
+Apple ID. To run from Xcode instead, run `xcodegen generate` in `ios/`, open `YTDL.xcodeproj`, pick
+your team under Signing, and run.
 
-The app updates yt-dlp by itself (see below). To change the version bundled in the IPA instead,
-run `YTDLP_VERSION=<version> ./scripts/bootstrap.sh` and rebuild. If that release needs a new
-`yt-dlp-ejs`, set `EJS_VERSION` too.
+## Build: Android
+
+Requirements: the Android SDK with platform 37 and NDK 27 (Android Studio installs both), JDK 17+,
+and a host Python **3.14** (Chaquopy uses it to install yt-dlp at build time).
+
+```bash
+./android/scripts/build_ffmpeg.sh  # minimal FFmpeg for arm64 + x86_64 (about a minute)
+./android/scripts/build_apk.sh     # -> android/build/apk/yt-dlp-arm64.apk (phones)
+```
+
+Install `yt-dlp-arm64.apk` on any Android 10+ phone: open it on the phone, or run
+`adb install yt-dlp-arm64.apk`. It's signed with the Android debug key; set up your own
+`signingConfig` in `android/app/build.gradle.kts` for a stable release key. You can also open
+`android/` in Android Studio.
+
+The bundled yt-dlp version is pinned in `ios/scripts/bootstrap.sh` and
+`android/app/build.gradle.kts`. The apps update past it on their own.
 
 ## Using it
 
-- Paste a link and tap **Download**, then pick a format.
-- Tap a finished download to play it. Long-press for **Share**, **Save to Photos**, **Retry**, or
-  **Delete**.
-- Videos are saved straight to **Photos**. They're moved rather than copied, so large files
-  don't take up space twice. Audio, and videos Photos can't play (like 4K AV1 on iPhones without
-  AV1 hardware), stay in the app, under *Files → On My iPhone → yt-dlp*. Settings › Saving can
-  turn this off or keep a copy in the app too.
-- **Share-sheet shortcut:** in Shortcuts, create a shortcut that receives URLs from the share sheet
-  and runs *Open URL* with `ytdlp://download?url=` followed by the *Shortcut Input* variable. The
-  app then opens with that link already loaded.
-
-### Settings (gear icon)
-
-- **Updates are automatic.** Once a day (and on first launch) the app checks PyPI for a newer
-  yt-dlp. If there is one, the app downloads it in the background and verifies its checksum,
-  then uses it from the next launch. Nothing needs tapping. The version built into the app stays
-  as a fallback: it's used until the first update arrives, and whenever an update fails to load.
-  yt-dlp is pure Python, so none of this needs a rebuild or re-signing. It would not be allowed
-  on the App Store.
-- **Advanced** holds the manual controls: **Check Now**, **Nightly Builds** (YouTube fixes
-  before they reach a stable release), and **Revert to Built-in Version**. Revert removes a
-  downloaded update that misbehaves, and that version isn't reinstalled automatically afterwards.
-- **Accounts.** **Sign In to a Site** opens an in-app browser. Log in and tap **Done**, and the
-  site's cookies are saved for yt-dlp. **Import cookies.txt** accepts a Netscape-format cookie
-  export from a desktop browser. Swipe a site to sign out. YouTube may flag accounts used with
-  yt-dlp, so use a spare account there.
+- Paste a link and tap **Download**, then pick a format. On Android you can also **share** a link
+  from YouTube, a browser, or any app and pick **yt-dlp**.
+- Tap a finished download to play it. Long-press for **Share**, **Retry**, **Delete** and more.
+- **Settings › Accounts:** **Sign In to a Site** opens an in-app browser. Log in and tap **Done**,
+  and that site's cookies are used for downloads. **Import cookies.txt** accepts a Netscape-format
+  export from a desktop browser. YouTube may flag accounts used with yt-dlp, so use a spare
+  account there.
+- **Settings › Advanced:** **Check Now**, **Nightly Builds** (YouTube fixes before they reach a
+  stable release), and **Revert to Built-in Version**.
+- **iOS only:** videos go straight into Photos, moved rather than copied (Settings › Saving). To
+  share from YouTube, make a Shortcut that opens `ytdlp://download?url=` plus the Shortcut Input.
 
 ## Limitations
 
-- **Background downloads** keep running after you leave the app on **iOS 26+**, with a
-  system progress indicator. You or the system can stop them from there. On older iOS versions,
-  downloads get about 30 seconds after the app leaves the screen. The iOS 26 path can't run in
-  the Simulator, so it needs testing on a real device. Some sideloading tools (e.g. AltStore)
-  rewrite the bundle ID. That disables this feature, because the permitted task identifier no
-  longer matches, and downloads fall back to the 30-second behaviour.
-- **Google may refuse sign-in** inside the in-app browser. If that happens, export cookies from a
-  desktop browser and use **Import cookies.txt**.
-- Nothing is re-encoded (FFmpeg is built without encoders), so formats the device can't play
-  natively, such as AV1 on older iPhones or VP9, stay as they are, labelled "Plays in VLC".
-  Converting to MP3, and embedding subtitles and cover art, aren't supported yet.
-- The last failure's full yt-dlp log is saved to `Library/Caches/yt-dlp/last_error.log`. Debug
-  builds also log yt-dlp's verbose output.
+- **YouTube's bot check.** After many requests from one network, YouTube may answer "Sign in to
+  confirm you're not a bot". It usually clears within hours; signing in (Settings › Accounts)
+  avoids it.
+- **iOS background downloads** need iOS 26+ and haven't been tested on a device yet (the Simulator
+  can't run them). On older versions, downloads get about 30 seconds in the background. Sideloading
+  tools that rewrite the bundle ID, such as AltStore, disable this feature.
+- **Google may refuse sign-in** in the in-app browser. If so, use **Import cookies.txt**.
+- Nothing is re-encoded, so converting to MP3, and embedding subtitles and cover art, aren't
+  supported yet.
+- Debug builds log yt-dlp's verbose output: the system log on iOS, and logcat `python.stdout` on
+  Android. The last failure's full log is also saved to `yt-dlp/last_error.log` in the app's cache.

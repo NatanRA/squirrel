@@ -10,15 +10,15 @@ folder in the Files app. From there you can share it or save it to Photos.
 |---|---|
 | `Vendor/Python.xcframework` | CPython 3.14 for iOS from [BeeWare's Python-Apple-support](https://github.com/beeware/Python-Apple-support) |
 | `Vendor/app_packages` | `yt-dlp`, `yt-dlp-ejs` (YouTube challenge solver scripts) and `certifi`, precompiled to bytecode |
-| `App/Bridge/PyBridge.c` | Starts the interpreter, calls into Python from any thread, and exposes `_iosbridge.run_js` |
-| `App/PythonApp/ytdl_bridge.py` | JSON API used by the app: `extract`, `download`, `progress`, `cancel`, updates |
-| `App/PythonApp/jsc_provider.py` | yt-dlp JS challenge provider backed by JavaScriptCore |
-| `App/PythonApp/ytdl_updater.py` | Installs newer yt-dlp releases from PyPI, with fallback to the built-in copy |
-| `App/Sources/PythonRuntime.swift` | Swift side of the bridge, plus the **JavaScriptCore** runner |
-| `Vendor/FFmpeg.xcframework` | Minimal FFmpeg (remux only: no encoders/decoders, LGPL-2.1), built by `scripts/build_ffmpeg.sh` |
-| `App/Bridge/Remux.c`, `App/Sources/Remuxer.swift` | Merges separate video/audio streams and rewraps single files into a clean container |
-| `App/Sources/BackgroundContinuation.swift` | Keeps downloads running in the background (iOS 26+) |
-| `App/Sources/CookieStore.swift`, `SignInView.swift` | In-app sign-in and cookies.txt import for sites that need an account |
+| `ios/App/Bridge/PyBridge.c` | Starts the interpreter, calls into Python from any thread, and exposes `_host.run_js` |
+| `shared/pybridge/ytdl_bridge.py` | JSON API used by the app: `extract`, `download`, `progress`, `cancel`, updates |
+| `shared/pybridge/jsc_provider.py` | yt-dlp JS challenge provider backed by JavaScriptCore |
+| `shared/pybridge/ytdl_updater.py` | Installs newer yt-dlp releases from PyPI, with fallback to the built-in copy |
+| `ios/App/Sources/PythonRuntime.swift` | Swift side of the bridge, plus the **JavaScriptCore** runner |
+| `Vendor/FFmpeg.xcframework` | Minimal FFmpeg (remux only: no encoders/decoders, LGPL-2.1), built by `ios/scripts/build_ffmpeg.sh` |
+| `shared/native/Remux.c`, `ios/App/Sources/Remuxer.swift` | Merges separate video/audio streams and rewraps single files into a clean container |
+| `ios/App/Sources/BackgroundContinuation.swift` | Keeps downloads running in the background (iOS 26+) |
+| `ios/App/Sources/CookieStore.swift`, `SignInView.swift` | In-app sign-in and cookies.txt import for sites that need an account |
 
 iOS apps can't spawn subprocesses, which rules out two things yt-dlp normally depends on:
 
@@ -39,9 +39,9 @@ Requirements: Xcode 16+, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`bre
 and a host Python **3.14** (used to precompile bytecode that matches the embedded interpreter).
 
 ```bash
-./scripts/bootstrap.sh     # downloads Python for iOS + yt-dlp into Vendor/
-./scripts/build_ffmpeg.sh  # builds the minimal FFmpeg into Vendor/ (about a minute)
-./scripts/build_ipa.sh     # -> build/YTDL.ipa
+./ios/scripts/bootstrap.sh     # downloads Python for iOS + yt-dlp into Vendor/
+./ios/scripts/build_ffmpeg.sh  # builds the minimal FFmpeg into Vendor/ (about a minute)
+./ios/scripts/build_ipa.sh     # -> build/YTDL.ipa
 ```
 
 The IPA is ad-hoc signed. Install it with AltStore, SideStore, Sideloadly, or TrollStore, which

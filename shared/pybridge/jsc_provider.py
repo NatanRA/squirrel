@@ -1,13 +1,14 @@
 """yt-dlp JS challenge provider backed by the system JavaScriptCore.
 
-iOS apps can't spawn deno/node, so the EJS solver scripts run in
-JavaScriptCore instead, exposed by the app as the built-in ``_iosbridge``.
+Mobile apps can't spawn deno/node, so the EJS solver scripts run in the
+platform's own engine instead, exposed by the app as the module ``_host``:
+JavaScriptCore on iOS, V8 via Jetpack JavaScriptEngine on Android.
 This relies on yt-dlp internals; if a future yt-dlp moves them, importing this
 module fails and ytdl_updater falls back to the bundled yt-dlp.
 """
 from __future__ import annotations
 
-import _iosbridge
+import _host
 
 from yt_dlp.extractor.youtube.jsc._builtin.ejs import EJSBaseJCP
 from yt_dlp.extractor.youtube.jsc.provider import (
@@ -36,9 +37,9 @@ class JavaScriptCoreJCP(EJSBaseJCP, BuiltinIEContentProvider):
 
     def _run_js_runtime(self, stdin: str, /) -> str:
         try:
-            return _iosbridge.run_js(stdin)
+            return _host.run_js(stdin)
         except RuntimeError as e:
-            raise JsChallengeProviderError(f'JavaScriptCore error: {e}') from e
+            raise JsChallengeProviderError(f'JavaScript engine error: {e}') from e
 
 
 @register_preference(JavaScriptCoreJCP)

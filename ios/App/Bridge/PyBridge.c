@@ -11,9 +11,9 @@ void pybridge_set_js_runner(pybridge_js_runner_t runner) {
     js_runner = runner;
 }
 
-#pragma mark - _iosbridge module (Python -> app)
+#pragma mark - _host module (Python -> app)
 
-static PyObject *iosbridge_run_js(PyObject *self, PyObject *args) {
+static PyObject *host_run_js(PyObject *self, PyObject *args) {
     const char *code;
     if (!PyArg_ParseTuple(args, "s", &code)) {
         return NULL;
@@ -44,17 +44,17 @@ static PyObject *iosbridge_run_js(PyObject *self, PyObject *args) {
     return result;
 }
 
-static PyMethodDef iosbridge_methods[] = {
-    {"run_js", iosbridge_run_js, METH_VARARGS, "Evaluate JavaScript with JavaScriptCore and return console output."},
+static PyMethodDef host_methods[] = {
+    {"run_js", host_run_js, METH_VARARGS, "Evaluate JavaScript with JavaScriptCore and return console output."},
     {NULL, NULL, 0, NULL},
 };
 
-static struct PyModuleDef iosbridge_module = {
-    PyModuleDef_HEAD_INIT, "_iosbridge", NULL, -1, iosbridge_methods,
+static struct PyModuleDef host_module = {
+    PyModuleDef_HEAD_INIT, "_host", NULL, -1, host_methods,
 };
 
-static PyObject *PyInit_iosbridge(void) {
-    return PyModule_Create(&iosbridge_module);
+static PyObject *PyInit_host(void) {
+    return PyModule_Create(&host_module);
 }
 
 #pragma mark - Interpreter lifecycle (app -> Python)
@@ -103,8 +103,8 @@ char *pybridge_initialize(const char *resource_path) {
     PyConfig config;
     char path[4096];
 
-    if (PyImport_AppendInittab("_iosbridge", PyInit_iosbridge) == -1) {
-        return strdup("Could not register _iosbridge module");
+    if (PyImport_AppendInittab("_host", PyInit_host) == -1) {
+        return strdup("Could not register _host module");
     }
 
     PyPreConfig_InitIsolatedConfig(&preconfig);
@@ -130,7 +130,7 @@ char *pybridge_initialize(const char *resource_path) {
         return strdup(status.err_msg ? status.err_msg : "Py_InitializeFromConfig failed");
     }
 
-    // app_packages is a site dir (honours .pth files); PythonApp holds our bridge.
+    // app_packages is a site dir (honours .pth files); pybridge holds our bridge.
     char *error = NULL;
     snprintf(path, sizeof(path), "%s/app_packages", resource_path);
     PyObject *site = PyImport_ImportModule("site");
@@ -142,7 +142,7 @@ char *pybridge_initialize(const char *resource_path) {
     }
 
     if (error == NULL) {
-        snprintf(path, sizeof(path), "%s/PythonApp", resource_path);
+        snprintf(path, sizeof(path), "%s/pybridge", resource_path);
         PyObject *sys_path = PySys_GetObject("path");  // borrowed
         PyObject *app_path = PyUnicode_FromString(path);
         if (sys_path == NULL || app_path == NULL || PyList_Insert(sys_path, 0, app_path) != 0) {

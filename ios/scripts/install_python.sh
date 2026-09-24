@@ -18,4 +18,4 @@ source "$DERIVED_FILE_DIR/python_utils.sh"
 install_python Vendor/Python.xcframework app_packages
 
 # Bytecode left over from running the bridge on a Mac during development
-rm -rf "$CODESIGNING_FOLDER_PATH/PythonApp/__pycache__"
+rm -rf "$CODESIGNING_FOLDER_PATH/pybridge/__pycache__"

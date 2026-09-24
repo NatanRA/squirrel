@@ -76,14 +76,17 @@ def version_tuple(version):
 
 
 def bundled_version():
+    """Version of the yt-dlp shipped inside the app (not an update)."""
+    current = _path('current')
     for entry in sys.path:
-        if entry.rstrip('/').endswith('app_packages'):
-            try:
-                with open(os.path.join(entry, 'yt_dlp', 'version.py'), encoding='utf-8') as f:
-                    match = re.search(r"^__version__\s*=\s*'([^']+)'", f.read(), re.M)
-                    return match and match.group(1)
-            except OSError:
-                return None
+        if current and os.path.abspath(entry) == os.path.abspath(current):
+            continue
+        try:
+            with open(os.path.join(entry, 'yt_dlp', 'version.py'), encoding='utf-8') as f:
+                match = re.search(r"^__version__\s*=\s*'([^']+)'", f.read(), re.M)
+                return match and match.group(1)
+        except OSError:
+            continue
     return None
 
 

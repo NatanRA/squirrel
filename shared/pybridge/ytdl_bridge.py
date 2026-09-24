@@ -3,10 +3,10 @@
 Every public function takes a JSON string and returns a JSON string, so the
 C layer only ever has to shuttle UTF-8 text back and forth.
 
-iOS apps cannot spawn subprocesses, so neither ffmpeg nor an external JS
-runtime (deno/node/...) is available. Instead:
-  * YouTube's JS challenges are solved with the system JavaScriptCore, exposed
-    to Python by the app as the built-in module ``_iosbridge``.
+Shared by the iOS and Android apps. Neither can rely on spawning ffmpeg or an
+external JS runtime (deno/node/...), so instead:
+  * YouTube's JS challenges are solved with the platform's JS engine, exposed
+    to Python by the app as the module ``_host`` (see jsc_provider.py).
   * Separate video/audio streams are downloaded one at a time and merged by
     the app with an embedded FFmpeg library (remux only, no re-encoding).
 """

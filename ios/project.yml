@@ -19,8 +19,10 @@ targets:
     sources:
       - path: App/Sources
       - path: App/Bridge
+      - path: ../shared/native
       - path: App/Assets.xcassets
-      - path: App/PythonApp
+      # Shared with the Android app; bundled as "pybridge"
+      - path: ../shared/pybridge
         type: folder
         buildPhase: resources
       - path: Vendor/app_packages

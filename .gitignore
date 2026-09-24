@@ -1,0 +1,6 @@
+build/
+Vendor/
+YTDL.xcodeproj/
+App/Info.plist
+__pycache__/
+.DS_Store

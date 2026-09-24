@@ -1,0 +1,74 @@
+name: YTDL
+options:
+  bundleIdPrefix: com.natan
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  YTDL:
+    type: application
+    platform: iOS
+    sources:
+      - path: App/Sources
+      - path: App/Bridge
+      - path: App/Assets.xcassets
+      - path: App/PythonApp
+        type: folder
+        buildPhase: resources
+      - path: Vendor/app_packages
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - framework: Vendor/Python.xcframework
+        embed: true
+      - sdk: JavaScriptCore.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.natan.ytdlp
+        PRODUCT_NAME: YTDL
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_OBJC_BRIDGING_HEADER: App/Bridge/Bridging-Header.h
+        HEADER_SEARCH_PATHS: "\"$(BUILT_PRODUCTS_DIR)/Python.framework/Headers\""
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER: NO
+        # utils.sh copies lib-$ARCHS, so each build must be single-arch.
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: yt-dlp
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Expose Documents in the Files app
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        NSPhotoLibraryAddUsageDescription: Save downloaded videos to your photo library.
+        ITSAppUsesNonExemptEncryption: false
+        CFBundleURLTypes:
+          - CFBundleURLName: com.natan.ytdlp
+            CFBundleURLSchemes: [ytdlp]
+    postBuildScripts:
+      - name: Install Python
+        script: "\"$PROJECT_DIR/scripts/install_python.sh\""
+        basedOnDependencyAnalysis: false

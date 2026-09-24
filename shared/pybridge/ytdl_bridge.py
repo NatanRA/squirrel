@@ -28,7 +28,7 @@ ytdl_updater.load_ytdlp()
 import yt_dlp  # noqa: E402
 
 
-_config = {'cache_dir': None, 'cookie_file': None, 'av1_decode': False}
+_config = {'cache_dir': None, 'cookie_file': None, 'av1_decode': False, 'vp9_decode': False}
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 
@@ -43,6 +43,8 @@ class _Logger:
         self.lines = []
 
     def _add(self, msg):
+        if _config.get('verbose'):
+            print(msg)  # the system log on iOS, logcat (python.stdout) on Android
         self.lines.append(msg)
         del self.lines[:-200]
         if self.job is not None:
@@ -77,6 +79,8 @@ def _base_opts(logger):
     }
     if _config['cache_dir']:
         opts['cachedir'] = _config['cache_dir']
+    if _config.get('extractor_args'):
+        opts['extractor_args'] = _config['extractor_args']
     cookie_file = _config.get('cookie_file')
     if cookie_file and os.path.exists(cookie_file) and _config.get('cache_dir'):
         # yt-dlp writes the jar back on exit; give it a private copy so the
@@ -91,8 +95,28 @@ def _ok(**data):
     return json.dumps({'ok': True, **data})
 
 
+# Plain-language versions of errors people commonly hit; the original stays in the log.
+_HINTS = (
+    (('confirm you’re not a bot', "confirm you're not a bot"),
+     "YouTube is asking this network to prove it isn't a bot. Try again later, or sign in to "
+     "YouTube in Settings › Accounts."),
+    (('Your IP address is blocked',),
+     "This post isn't available from your network or region."),
+    (('Private video', 'This video is private'),
+     "This video is private. If you have access, sign in to the site in Settings › Accounts."),
+    (('Unsupported URL',),
+     "yt-dlp doesn't recognise this link. Check that it points to a video or audio page."),
+)
+
+
 def _err(e, logger=None):
     msg = str(e) or e.__class__.__name__
+    for needles, hint in _HINTS:
+        if any(n in msg for n in needles):
+            if logger:
+                logger.lines.append(msg)
+            msg = hint
+            break
     # Keep the last failure's log around for debugging (Caches/yt-dlp/last_error.log)
     if _config.get('cache_dir'):
         try:
@@ -245,9 +269,11 @@ _MP4_AUDIO = {'AAC', 'MP3', 'Opus', 'FLAC', 'ALAC', 'AC3', 'EAC3', None}
 
 
 def _plays_natively(f):
-    """Whether Apple's players (Photos, Files, the app's own) can play the video."""
+    """Whether the platform's own players (Photos/Gallery, Files) can play the video."""
     codec = _codec(f.get('vcodec'))
-    return codec in ('H.264', 'HEVC', None) or (codec == 'AV1' and _config.get('av1_decode'))
+    return (codec in ('H.264', 'HEVC', None)
+            or (codec == 'AV1' and _config.get('av1_decode'))
+            or (codec == 'VP9' and _config.get('vp9_decode')))  # Android: yes; iOS: no
 
 
 def _video_rank(f):

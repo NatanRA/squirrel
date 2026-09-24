@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import compileall
 import hashlib
+import importlib.machinery
+import importlib.util
 import io
 import json
 import os
@@ -76,18 +78,21 @@ def version_tuple(version):
 
 
 def bundled_version():
-    """Version of the yt-dlp shipped inside the app (not an update)."""
+    """Version of the yt-dlp shipped inside the app (not an update).
+
+    Loads just yt_dlp/version.py through the import system, so it works with
+    any importer: plain files on iOS, Chaquopy's APK asset importer on Android.
+    """
     current = _path('current')
-    for entry in sys.path:
-        if current and os.path.abspath(entry) == os.path.abspath(current):
-            continue
-        try:
-            with open(os.path.join(entry, 'yt_dlp', 'version.py'), encoding='utf-8') as f:
-                match = re.search(r"^__version__\s*=\s*'([^']+)'", f.read(), re.M)
-                return match and match.group(1)
-        except OSError:
-            continue
-    return None
+    paths = [p for p in sys.path if not (current and os.path.abspath(p) == os.path.abspath(current))]
+    try:
+        package = importlib.machinery.PathFinder.find_spec('yt_dlp', paths)
+        spec = importlib.machinery.PathFinder.find_spec('yt_dlp.version', list(package.submodule_search_locations))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)  # plain assignments; not registered in sys.modules
+        return module.__version__
+    except Exception:
+        return None
 
 
 # region: PyPI

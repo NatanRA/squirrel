@@ -3,7 +3,6 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(DownloadStore.self) private var store
-    @Environment(UpdateManager.self) private var updates
     @State private var showingSettings = false
     @State private var urlText = ""
     @State private var isFetching = false
@@ -34,9 +33,6 @@ struct ContentView: View {
                 } footer: {
                     if let error = store.startupError {
                         Text(error).foregroundStyle(.red)
-                    } else if let latest = updates.availableVersion {
-                        Button("yt-dlp \(UpdateManager.display(latest)) is available. Update in Settings.") { showingSettings = true }
-                            .font(.footnote)
                     } else if let version = store.ytdlpVersion {
                         Text("yt-dlp \(UpdateManager.display(version)) · Files are saved to the yt-dlp folder in the Files app.")
                     } else {

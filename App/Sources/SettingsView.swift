@@ -14,16 +14,13 @@ struct SettingsView: View {
     @State private var alert: AlertMessage?
 
     var body: some View {
-        @Bindable var updates = updates
         NavigationStack {
             Form {
                 updatesSection
-                Section {
-                    Toggle("Nightly Builds", isOn: $updates.nightly)
-                } footer: {
-                    Text("Nightly builds get YouTube fixes days before a stable release, but can have new bugs.")
-                }
                 accountsSection
+                Section {
+                    NavigationLink("Advanced") { AdvancedSettingsView() }
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -65,59 +62,19 @@ struct SettingsView: View {
 
     private var updatesSection: some View {
         Section {
-            LabeledContent("yt-dlp") {
-                VStack(alignment: .trailing) {
-                    Text(updates.runningVersion.map(UpdateManager.display) ?? "…").monospacedDigit()
-                    Text(updates.isUsingUpdate ? "Updated" : "Built-in").font(.caption)
-                }
-            }
-
-            switch updates.phase {
-            case .idle, .upToDate, .failed:
-                Button("Check for Updates") { Task { await updates.check() } }
-            case .checking:
-                HStack { ProgressView(); Text("Checking…").padding(.leading, 6) }
-            case .available(let version):
-                Button { Task { await updates.install(version) } } label: {
-                    Label("Install \(UpdateManager.display(version))", systemImage: "arrow.down.circle")
-                }
-            case .installing(let version):
-                HStack { ProgressView(); Text("Installing \(UpdateManager.display(version))…").padding(.leading, 6) }
-            case .restartRequired(let version):
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("\(UpdateManager.display(version)) will be used after the app restarts.", systemImage: "arrow.clockwise.circle")
-                    Button("Quit App Now") { exit(0) }
-                        .font(.subheadline.weight(.semibold))
-                }
-            }
-
-            if updates.isUsingUpdate || isRestartPending {
-                Button("Revert to Built-in Version", role: .destructive) {
-                    Task { await updates.revertToBundled() }
-                }
-            }
+            LabeledContent("yt-dlp", value: updates.runningVersion.map(UpdateManager.display) ?? "…")
+                .monospacedDigit()
+            UpdateStatusRow()
         } header: {
             Text("Updates")
         } footer: {
-            switch updates.phase {
-            case .upToDate:
-                Text("You have the latest version.")
-            case .failed(let message):
-                Text(message).foregroundStyle(.red)
-            default:
-                if let error = updates.loadError {
-                    Text("An update failed to load and was disabled, so the built-in version is in use. (\(error))")
-                        .foregroundStyle(.red)
-                } else {
-                    Text("YouTube changes often. Updating yt-dlp usually fixes downloads that stop working.")
-                }
+            if let error = updates.loadError {
+                Text("An update failed to load, so the built-in version is in use. (\(error))")
+                    .foregroundStyle(.red)
+            } else {
+                Text("yt-dlp updates itself automatically, which keeps downloads working when sites change.")
             }
         }
-    }
-
-    private var isRestartPending: Bool {
-        if case .restartRequired = updates.phase { return true }
-        return false
     }
 
     // MARK: - Accounts
@@ -161,5 +118,97 @@ struct SettingsView: View {
         guard let url = URL(string: text), url.host != nil else { return }
         signInSite = LoginSite(name: url.host ?? "Sign In", url: url)
         customSiteText = ""
+    }
+}
+
+/// One line describing what the automatic updater is doing.
+private struct UpdateStatusRow: View {
+    @Environment(UpdateManager.self) private var updates
+
+    var body: some View {
+        switch updates.phase {
+        case .checking:
+            progress("Checking for updates…")
+        case .installing(let version):
+            progress("Downloading \(UpdateManager.display(version))…")
+        case .ready(let version):
+            VStack(alignment: .leading, spacing: 6) {
+                Text("\(UpdateManager.display(version)) will be used next time the app opens.")
+                Button("Restart Now") { exit(0) }
+                    .font(.subheadline.weight(.semibold))
+            }
+        case .idle, .failed:
+            Text(lastChecked).foregroundStyle(.secondary)
+        }
+    }
+
+    private var lastChecked: String {
+        guard let date = updates.lastCheck else { return "Not checked yet" }
+        return "Up to date · checked \(date.formatted(.relative(presentation: .named)))"
+    }
+
+    private func progress(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView()
+            Text(text).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Manual controls for troubleshooting updates.
+private struct AdvancedSettingsView: View {
+    @Environment(UpdateManager.self) private var updates
+
+    var body: some View {
+        @Bindable var updates = updates
+        Form {
+            Section {
+                LabeledContent("Running", value: updates.runningVersion.map(UpdateManager.display) ?? "…")
+                LabeledContent("Built-in", value: updates.bundledVersion.map(UpdateManager.display) ?? "…")
+                UpdateStatusRow()
+                Button("Check Now") { Task { await updates.checkNow() } }
+                    .disabled(isBusy)
+            } header: {
+                Text("yt-dlp")
+            } footer: {
+                if case .failed(let message) = updates.phase {
+                    Text(message).foregroundStyle(.red)
+                } else if updates.isUpToDate {
+                    Text("You have the latest version.")
+                }
+            }
+
+            Section {
+                Toggle("Nightly Builds", isOn: $updates.nightly)
+            } footer: {
+                Text("Nightly builds get YouTube fixes days before a stable release, but can have new bugs.")
+            }
+
+            if updates.isUsingUpdate || isUpdatePending {
+                Section {
+                    Button("Revert to Built-in Version", role: .destructive) {
+                        Task { await updates.revertToBundled() }
+                    }
+                } footer: {
+                    Text("Removes the downloaded update if it causes problems. That version won't be installed again automatically.")
+                }
+            }
+        }
+        .navigationTitle("Advanced")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var isBusy: Bool {
+        switch updates.phase {
+        case .checking, .installing: true
+        default: false
+        }
+    }
+
+    private var isUpdatePending: Bool {
+        if case .ready(let version) = updates.phase {
+            return UpdateManager.normalized(version) != UpdateManager.normalized(updates.bundledVersion)
+        }
+        return false
     }
 }

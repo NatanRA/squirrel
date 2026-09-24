@@ -59,12 +59,15 @@ run `YTDLP_VERSION=<version> ./scripts/bootstrap.sh` and rebuild. If that releas
 
 ### Settings (gear icon)
 
-- **Updates.** The app checks PyPI once a day and offers newer yt-dlp releases. Installing one
-  downloads and checksum-verifies the wheels into the app's storage, and the new version is used
-  after the app restarts. Turn on **Nightly Builds** to get YouTube fixes before they reach a
-  stable release. If an update fails to load, the app falls back to the built-in version and says
-  so. **Revert to Built-in Version** removes the update. yt-dlp is pure Python, so this needs no
-  rebuild or re-signing. It would not be allowed on the App Store.
+- **Updates are automatic.** Once a day (and on first launch) the app checks PyPI for a newer
+  yt-dlp. If there is one, the app downloads it in the background and verifies its checksum,
+  then uses it from the next launch. Nothing needs tapping. The version built into the app stays
+  as a fallback: it's used until the first update arrives, and whenever an update fails to load.
+  yt-dlp is pure Python, so none of this needs a rebuild or re-signing. It would not be allowed
+  on the App Store.
+- **Advanced** holds the manual controls: **Check Now**, **Nightly Builds** (YouTube fixes
+  before they reach a stable release), and **Revert to Built-in Version**. Revert removes a
+  downloaded update that misbehaves, and that version isn't reinstalled automatically afterwards.
 - **Accounts.** **Sign In to a Site** opens an in-app browser. Log in and tap **Done**, and the
   site's cookies are saved for yt-dlp. **Import cookies.txt** accepts a Netscape-format cookie
   export from a desktop browser. Swipe a site to sign out. YouTube may flag accounts used with

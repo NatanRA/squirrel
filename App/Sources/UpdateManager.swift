@@ -2,18 +2,18 @@ import Foundation
 import Observation
 
 /// Keeps the embedded yt-dlp current by installing newer releases from PyPI
-/// (see ytdl_updater.py). Updates apply on the next launch.
+/// (see ytdl_updater.py). Runs silently: at most once a day it checks, downloads
+/// and stages an update, which takes effect the next time the app starts. The
+/// built-in copy remains as the fallback if an update fails to load.
 @MainActor
 @Observable
 final class UpdateManager {
     enum Phase: Equatable {
         case idle
         case checking
-        case upToDate
-        case available(String)
         case installing(String)
-        /// Installed; takes effect after the app restarts.
-        case restartRequired(String)
+        /// Installed on disk; used from the next launch.
+        case ready(String)
         case failed(String)
     }
 
@@ -23,17 +23,25 @@ final class UpdateManager {
     private(set) var isUsingUpdate = false
     /// Set when an installed update failed to import and was disabled.
     private(set) var loadError: String?
+    /// Whether the last manual check found nothing newer.
+    private(set) var isUpToDate = false
+
+    var lastCheck: Date? { UserDefaults.standard.object(forKey: Keys.lastCheck) as? Date }
 
     var nightly: Bool {
         didSet {
             UserDefaults.standard.set(nightly, forKey: Keys.nightly)
-            phase = .idle
+            // Switching channel should take effect without waiting a day.
+            UserDefaults.standard.removeObject(forKey: Keys.lastCheck)
+            Task { await autoUpdateIfDue() }
         }
     }
 
     private enum Keys {
         static let nightly = "updates.nightly"
         static let lastCheck = "updates.lastCheck"
+        /// A version the user reverted; not reinstalled automatically.
+        static let skipped = "updates.skippedVersion"
     }
 
     init() {
@@ -49,53 +57,66 @@ final class UpdateManager {
         // An update installed on disk that isn't the one running yet.
         if let pending = status["pending_version"] as? String,
            Self.normalized(pending) != Self.normalized(runningVersion) {
-            phase = .restartRequired(pending)
+            phase = .ready(pending)
         }
     }
 
-    /// Checks at most once a day; call on launch.
-    func checkIfDue() async {
-        let last = UserDefaults.standard.object(forKey: Keys.lastCheck) as? Date ?? .distantPast
-        guard Date.now.timeIntervalSince(last) > 24 * 3600, phase == .idle else { return }
-        await check(quietly: true)
+    /// Checks at most once a day; safe to call on every launch and foreground.
+    func autoUpdateIfDue() async {
+        guard !isBusy, Date.now.timeIntervalSince(lastCheck ?? .distantPast) > 24 * 3600 else { return }
+        await update(manual: false)
     }
 
-    func check(quietly: Bool = false) async {
-        if case .restartRequired = phase { return }
+    /// Checks right away from Settings, including versions previously reverted.
+    func checkNow() async {
+        guard !isBusy else { return }
+        UserDefaults.standard.removeObject(forKey: Keys.skipped)
+        await update(manual: true)
+    }
+
+    /// Removes any downloaded update; the built-in version is used from the next launch.
+    func revertToBundled() async {
+        let reverted: String?
+        if case .ready(let pending) = phase { reverted = pending } else { reverted = isUsingUpdate ? runningVersion : nil }
+        _ = try? await PythonRuntime.shared.call("remove_update", [:])
+        // Otherwise the next automatic check would reinstall the same version.
+        if let reverted { UserDefaults.standard.set(Self.normalized(reverted), forKey: Keys.skipped) }
+        loadError = nil
+        isUpToDate = false
+        phase = isUsingUpdate ? .ready(bundledVersion ?? "built-in") : .idle
+    }
+
+    private var isBusy: Bool {
+        switch phase {
+        case .checking, .installing: true
+        default: false
+        }
+    }
+
+    private func update(manual: Bool) async {
+        let previous = phase
         phase = .checking
+        isUpToDate = false
         do {
             let result = try await PythonRuntime.shared.call("check_update", ["nightly": nightly])
-            UserDefaults.standard.set(Date.now, forKey: Keys.lastCheck)
-            if result["available"] as? Bool == true, let latest = result["latest"] as? String {
-                phase = .available(latest)
-            } else {
-                phase = quietly ? .idle : .upToDate
+            let skipped = UserDefaults.standard.string(forKey: Keys.skipped)
+            guard result["available"] as? Bool == true,
+                  let latest = result["latest"] as? String,
+                  manual || Self.normalized(latest) != skipped else {
+                UserDefaults.standard.set(Date.now, forKey: Keys.lastCheck)
+                isUpToDate = manual
+                phase = previous == .checking ? .idle : previous
+                return
             }
+            phase = .installing(latest)
+            _ = try await PythonRuntime.shared.call("install_update", ["version": latest])
+            // Only record the check once the update is safely installed, so a
+            // failed download is retried on the next launch.
+            UserDefaults.standard.set(Date.now, forKey: Keys.lastCheck)
+            phase = .ready(latest)
         } catch {
-            phase = quietly ? .idle : .failed(error.localizedDescription)
+            phase = manual ? .failed(error.localizedDescription) : previous
         }
-    }
-
-    func install(_ version: String) async {
-        phase = .installing(version)
-        do {
-            _ = try await PythonRuntime.shared.call("install_update", ["version": version])
-            phase = .restartRequired(version)
-        } catch {
-            phase = .failed(error.localizedDescription)
-        }
-    }
-
-    /// Removes any downloaded update; the built-in version loads next launch.
-    func revertToBundled() async {
-        _ = try? await PythonRuntime.shared.call("remove_update", [:])
-        loadError = nil
-        phase = isUsingUpdate ? .restartRequired(bundledVersion ?? "built-in") : .idle
-    }
-
-    var availableVersion: String? {
-        if case .available(let version) = phase { return version }
-        return nil
     }
 
     /// "2026.9.16.232951.dev0" -> "2026.9.16 (nightly)"

@@ -49,7 +49,7 @@ run `YTDLP_VERSION=<version> ./scripts/bootstrap.sh` and rebuild. If that releas
 
 ## Using it
 
-- Paste a link and tap **Get Video**, then pick a format.
+- Paste a link and tap **Download**, then pick a format.
 - Tap a finished download to play it. Long-press for **Share**, **Save to Photos**, **Retry**, or
   **Delete**.
 - Files appear under *Files → On My iPhone → yt-dlp*.

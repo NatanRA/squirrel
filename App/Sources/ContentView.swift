@@ -23,7 +23,7 @@ struct ContentView: View {
                                 ProgressView()
                                 Text("Fetching…").padding(.leading, 6)
                             } else {
-                                Label("Get Video", systemImage: "arrow.down.circle.fill")
+                                Label("Download", systemImage: "arrow.down.circle.fill")
                             }
                             Spacer()
                         }
@@ -87,7 +87,7 @@ struct ContentView: View {
 
     private var inputRow: some View {
         HStack {
-            TextField("Paste a video link", text: $urlText)
+            TextField("Paste a link", text: $urlText)
                 .keyboardType(.URL)
                 .textContentType(.URL)
                 .textInputAutocapitalization(.never)
@@ -163,7 +163,7 @@ struct ContentView: View {
             do {
                 info = try await store.fetchInfo(url)
             } catch {
-                alert = AlertMessage(title: "Couldn't Get Video", message: error.localizedDescription)
+                alert = AlertMessage(title: "Couldn’t Load Link", message: error.localizedDescription)
             }
         }
     }

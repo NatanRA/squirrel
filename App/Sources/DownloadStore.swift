@@ -9,6 +9,8 @@ struct FormatChoice: Identifiable, Hashable, Codable {
     let formatIDs: [String]
     let kind: String
     let ext: String?
+    /// False when only third-party players like VLC can play it (e.g. AV1 without hardware decode).
+    let playable: Bool?
 
     var isAudio: Bool { kind == "audio" }
 
@@ -20,6 +22,7 @@ struct FormatChoice: Identifiable, Hashable, Codable {
         self.formatIDs = formatIDs
         self.kind = dict["kind"] as? String ?? "video"
         self.ext = dict["ext"] as? String
+        self.playable = dict["playable"] as? Bool
     }
 }
 
@@ -213,20 +216,27 @@ final class DownloadStore {
 
             let files = (result["files"] as? [String] ?? []).map { URL(fileURLWithPath: $0) }
             let title = (result["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? item.title
-            let destination: URL
-            if files.count >= 2 {
-                update(id) { $0.state = .merging }
-                continuation.update(fraction: 1, subtitle: "Merging audio and video…")
-                destination = Self.uniqueDestination(title: title, ext: "mp4")
-                let durations = (result["durations"] as? [Any] ?? []).compactMap { $0 as? Double }
-                try await MediaMerger.merge(
-                    video: files[0], audio: files[1], to: destination, knownDuration: durations.min())
-            } else if let file = files.first {
-                let ext = Self.fileExtension(for: file, isAudio: item.choice.isAudio)
-                destination = Self.uniqueDestination(title: title, ext: ext)
-                try FileManager.default.moveItem(at: file, to: destination)
-            } else {
-                throw BridgeError(message: "yt-dlp finished without producing a file")
+            guard !files.isEmpty else { throw BridgeError(message: "yt-dlp finished without producing a file") }
+
+            // Merge or rewrap with FFmpeg into the container the format picker chose
+            update(id) { $0.state = .merging }
+            continuation.update(fraction: 1, subtitle: files.count > 1 ? "Merging audio and video…" : "Finishing…")
+            let container = item.choice.ext.flatMap { Remuxer.canWrite($0) ? $0 : nil }
+                ?? (item.choice.isAudio ? "m4a" : "mp4")
+            let metadata = [
+                "title": title,
+                "artist": result["artist"] as? String ?? "",
+                "date": result["date"] as? String ?? "",
+                "comment": result["url"] as? String ?? item.sourceURL,
+            ]
+            var destination = Self.uniqueDestination(title: title, ext: container)
+            do {
+                try await Remuxer.remux(files, to: destination, metadata: metadata)
+            } catch where files.count == 1 {
+                // A format FFmpeg can't rewrap: keep the file exactly as downloaded
+                destination = Self.uniqueDestination(
+                    title: title, ext: Self.fileExtension(for: files[0], isAudio: item.choice.isAudio))
+                try FileManager.default.moveItem(at: files[0], to: destination)
             }
             update(id) {
                 $0.state = .finished

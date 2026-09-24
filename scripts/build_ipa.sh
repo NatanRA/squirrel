@@ -10,6 +10,7 @@ BUILD="$ROOT/build"
 cd "$ROOT"
 
 [ -d Vendor/Python.xcframework ] && [ -d Vendor/app_packages ] || ./scripts/bootstrap.sh
+[ -d Vendor/FFmpeg.xcframework ] || ./scripts/build_ffmpeg.sh
 xcodegen generate --quiet
 
 rm -rf "$BUILD/dd" "$BUILD/Payload" "$BUILD/YTDL.ipa"

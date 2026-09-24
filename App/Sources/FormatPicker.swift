@@ -65,7 +65,8 @@ struct FormatPicker: View {
                     .frame(width: 28)
                 VStack(alignment: .leading) {
                     Text(choice.label).foregroundStyle(Color.primary)
-                    Text(choice.detail).font(.caption).foregroundStyle(Color.secondary)
+                    Text(choice.detail).font(.caption)
+                        .foregroundStyle(choice.playable == false ? Color.orange : Color.secondary)
                 }
                 Spacer()
                 Image(systemName: "arrow.down.circle").foregroundStyle(.tint)

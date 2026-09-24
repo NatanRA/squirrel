@@ -29,6 +29,10 @@ targets:
     dependencies:
       - framework: Vendor/Python.xcframework
         embed: true
+      - framework: Vendor/FFmpeg.xcframework
+        embed: false
+      - sdk: libz.tbd
+      - sdk: VideoToolbox.framework
       - sdk: JavaScriptCore.framework
     settings:
       base:
@@ -36,7 +40,9 @@ targets:
         PRODUCT_NAME: YTDL
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_OBJC_BRIDGING_HEADER: App/Bridge/Bridging-Header.h
-        HEADER_SEARCH_PATHS: "\"$(BUILT_PRODUCTS_DIR)/Python.framework/Headers\""
+        HEADER_SEARCH_PATHS:
+          - "\"$(BUILT_PRODUCTS_DIR)/Python.framework/Headers\""
+          - "\"$(PROJECT_DIR)/Vendor/FFmpeg.xcframework/ios-arm64/Headers\""
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER: NO
         # utils.sh copies lib-$ARCHS, so each build must be single-arch.

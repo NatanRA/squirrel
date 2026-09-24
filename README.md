@@ -15,7 +15,8 @@ folder in the Files app. From there you can share it or save it to Photos.
 | `App/PythonApp/jsc_provider.py` | yt-dlp JS challenge provider backed by JavaScriptCore |
 | `App/PythonApp/ytdl_updater.py` | Installs newer yt-dlp releases from PyPI, with fallback to the built-in copy |
 | `App/Sources/PythonRuntime.swift` | Swift side of the bridge, plus the **JavaScriptCore** runner |
-| `App/Sources/MediaMerger.swift` | Muxes separate video and audio streams with AVFoundation |
+| `Vendor/FFmpeg.xcframework` | Minimal FFmpeg (remux only: no encoders/decoders, LGPL-2.1), built by `scripts/build_ffmpeg.sh` |
+| `App/Bridge/Remux.c`, `App/Sources/Remuxer.swift` | Merges separate video/audio streams and rewraps single files into a clean container |
 | `App/Sources/BackgroundContinuation.swift` | Keeps downloads running in the background (iOS 26+) |
 | `App/Sources/CookieStore.swift`, `SignInView.swift` | In-app sign-in and cookies.txt import for sites that need an account |
 
@@ -24,10 +25,13 @@ iOS apps can't spawn subprocesses, which rules out two things yt-dlp normally de
 - **External JS runtime (Deno/Node).** YouTube downloads need a JS runtime to solve the signature
   and "n" challenges. The bridge registers a custom yt-dlp challenge provider that runs the
   official EJS solver in the system JavaScriptCore instead, which takes about 2 s per video.
-- **ffmpeg.** yt-dlp downloads the video and audio streams separately, and the app merges them
-  with `AVAssetExportSession` (passthrough, no re-encode). AVFoundation can only mux H.264 + AAC
-  into MP4, so merged options are limited to H.264. That covers up to 1080p60 on YouTube.
-  Single-file formats of any codec are offered as-is.
+- **The ffmpeg command-line tool.** Instead, the app embeds FFmpeg's libraries and calls them
+  directly: yt-dlp downloads the video and audio streams separately, and the app remuxes them
+  into one file without re-encoding. It rewraps single files too, which fixes broken duration
+  headers and turns HLS/MPEG-TS downloads into normal MP4s. That makes every codec available,
+  including YouTube's 1440p and 4K (AV1/VP9 only). The app asks VideoToolbox whether the device
+  decodes AV1 in hardware (iPhone 15 Pro and later, M-series iPads), and labels formats Apple's
+  players can't play with "Plays in VLC". Files are tagged with title, artist, year and source URL.
 
 ## Build
 
@@ -36,6 +40,7 @@ and a host Python **3.14** (used to precompile bytecode that matches the embedde
 
 ```bash
 ./scripts/bootstrap.sh     # downloads Python for iOS + yt-dlp into Vendor/
+./scripts/build_ffmpeg.sh  # builds the minimal FFmpeg into Vendor/ (about a minute)
 ./scripts/build_ipa.sh     # -> build/YTDL.ipa
 ```
 
@@ -83,8 +88,8 @@ run `YTDLP_VERSION=<version> ./scripts/bootstrap.sh` and rebuild. If that releas
   longer matches, and downloads fall back to the 30-second behaviour.
 - **Google may refuse sign-in** inside the in-app browser. If that happens, export cookies from a
   desktop browser and use **Import cookies.txt**.
-- Formats that would need ffmpeg (VP9/AV1 merges, remuxing HLS MPEG-TS to MP4, embedding
-  subtitles or thumbnails) aren't available. MPEG-TS HLS downloads are saved as `.ts`, which VLC or
-  Infuse can play.
+- Nothing is re-encoded (FFmpeg is built without encoders), so formats the device can't play
+  natively, such as AV1 on older iPhones or VP9, stay as they are, labelled "Plays in VLC".
+  Converting to MP3, and embedding subtitles and cover art, aren't supported yet.
 - The last failure's full yt-dlp log is saved to `Library/Caches/yt-dlp/last_error.log`. Debug
   builds also log yt-dlp's verbose output.

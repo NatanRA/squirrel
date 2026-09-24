@@ -230,7 +230,7 @@ struct DownloadRow: View {
                 caption(live?.summary ?? "Downloading…")
             }
         case .merging:
-            caption("Merging audio and video…")
+            caption((live?.parts ?? 1) > 1 ? "Merging audio and video…" : "Finishing…")
         case .finished:
             caption([item.choice.isAudio ? "Audio" : item.choice.label, fileType].joined(separator: " · "))
         case .cancelled:

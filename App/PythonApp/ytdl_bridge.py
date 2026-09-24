@@ -8,7 +8,7 @@ runtime (deno/node/...) is available. Instead:
   * YouTube's JS challenges are solved with the system JavaScriptCore, exposed
     to Python by the app as the built-in module ``_iosbridge``.
   * Separate video/audio streams are downloaded one at a time and merged by
-    the app with AVFoundation.
+    the app with an embedded FFmpeg library (remux only, no re-encoding).
 """
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ import json
 import os
 import re
 import shutil
-import struct
 import threading
 import traceback
 
@@ -29,7 +28,7 @@ ytdl_updater.load_ytdlp()
 import yt_dlp  # noqa: E402
 
 
-_config = {'cache_dir': None, 'cookie_file': None}
+_config = {'cache_dir': None, 'cookie_file': None, 'av1_decode': False}
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 
@@ -176,10 +175,6 @@ def _size_text(*fs):
     return ('~' if approx else '') + _human(total)
 
 
-def _is_avc(f):
-    return (f.get('vcodec') or '').startswith(('avc1', 'h264'))
-
-
 _STANDARD_HEIGHTS = (144, 240, 360, 480, 720, 1080, 1440, 2160, 4320)
 
 
@@ -205,7 +200,7 @@ def _is_drc(f):
 
 def _audio_rank(f):
     # Direct files with a declared codec over HLS streams (YouTube's HLS audio
-    # downloads as raw AAC that AVFoundation can't open), then original language.
+    # is raw AAC in a .mp4-named file), then original language.
     return (not _is_drc(f), 'm3u8' not in (f.get('protocol') or ''), f.get('acodec') is not None,
             f.get('language_preference') or 0, f.get('abr') or f.get('tbr') or 0)
 
@@ -244,12 +239,44 @@ def _human(n):
         n /= 1024
 
 
-def _presets(info):
-    """Build a short list of download choices the app can handle without ffmpeg.
+# Codecs FFmpeg's MP4 muxer accepts; anything else is kept in Matroska.
+_MP4_VIDEO = {'H.264', 'HEVC', 'AV1', 'VP9', None}
+_MP4_AUDIO = {'AAC', 'MP3', 'Opus', 'FLAC', 'ALAC', 'AC3', 'EAC3', None}
 
-    Single files that already contain audio and video are preferred. Otherwise
-    separate streams are merged by the app with AVFoundation, which can only
-    mux H.264 video with AAC audio into MP4.
+
+def _plays_natively(f):
+    """Whether Apple's players (Photos, Files, the app's own) can play the video."""
+    codec = _codec(f.get('vcodec'))
+    return codec in ('H.264', 'HEVC', None) or (codec == 'AV1' and _config.get('av1_decode'))
+
+
+def _video_rank(f):
+    # H.264 first (plays and edits anywhere), then AV1 (much smaller files),
+    # then whatever else exists at that size.
+    preference = {'H.264': 3, 'HEVC': 2, 'AV1': 2, 'VP9': 1}.get(_codec(f.get('vcodec')), 0)
+    return (_plays_natively(f), preference, f.get('fps') or 0, f.get('protocol') == 'https', f.get('tbr') or 0)
+
+
+def _container(video, audio=None):
+    """Output extension for the app's remux step."""
+    vcodec = _codec(video.get('vcodec')) if video else None
+    acodec = _codec(audio.get('acodec')) if audio else _codec((video or {}).get('acodec'))
+    return 'mp4' if vcodec in _MP4_VIDEO and acodec in _MP4_AUDIO else 'mkv'
+
+
+def _audio_container(f):
+    codec = _codec(f.get('acodec'))
+    ext = f.get('ext')
+    # Audio in an MP4 wrapper is conventionally .m4a (e.g. X's undeclared-codec audio)
+    return {'AAC': 'm4a', 'ALAC': 'm4a', 'MP3': 'mp3', 'FLAC': 'flac'}.get(codec) or ('m4a' if ext in (None, 'mp4') else ext)
+
+
+def _presets(info):
+    """Build a short list of download choices.
+
+    yt-dlp downloads each chosen format separately and the app remuxes them
+    into one file with FFmpeg (no re-encoding), so any codec works; choices
+    prefer what Apple's players can play and flag the rest.
     """
     formats = [f for f in (info.get('formats') or [info]) if f.get('url') or f.get('manifest_url')]
     # storyboards and other junk
@@ -259,52 +286,55 @@ def _presets(info):
     video_only = [f for f in formats if f.get('acodec') == 'none' and f.get('vcodec') != 'none' and _resolution(f)]
     progressive = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') != 'none' and _resolution(f)]
 
-    m4a = [f for f in audio_only
+    # AAC merges into MP4 and plays everywhere, so prefer it for merging too
+    aac = [f for f in audio_only
            if f.get('ext') in ('m4a', 'mp4') or (f.get('acodec') or '').startswith('mp4a')]
-    best_m4a = max(m4a, key=_audio_rank, default=None)
+    best_audio = max(aac, key=_audio_rank, default=None) or max(audio_only, key=_audio_rank, default=None)
 
     choices = {}
 
-    def add(res, f, ids, detail):
-        key = f'v{res}'
-        if key not in choices:
-            fps = f' {int(f["fps"])}fps' if (f.get('fps') or 0) > 30 else ''
-            choices[key] = {'id': key, 'label': f'{_label(res)}p{fps}', 'detail': detail, 'format_ids': ids,
-                            'kind': 'video', 'height': res, 'ext': f.get('ext')}
+    def add(f, ids, container, *extra):
+        res = _label(_resolution(f))
+        key = f'v{res}'  # by displayed size, so 854x470 and 872x480 share "480p"
+        if key in choices:
+            return
+        fps = f' {int(f["fps"])}fps' if (f.get('fps') or 0) > 30 else ''
+        name = {2160: '4K', 4320: '8K'}.get(res, f'{res}p')
+        note = None if _plays_natively(f) else 'Plays in VLC'
+        choices[key] = {'id': key, 'label': name + fps, 'kind': 'video', 'height': res, 'ext': container,
+                        'format_ids': ids, 'playable': note is None,
+                        'detail': _detail(container.upper(), _codec(f.get('vcodec')), *extra, note)}
 
     # 1. Single files with audio and video, best per resolution
-    for f in sorted(progressive, key=_quality, reverse=True):
-        add(_resolution(f), f, [f['format_id']],
-            _detail((f.get('ext') or '').upper(), _codec(f.get('vcodec')), _size_text(f)))
+    for f in sorted(progressive, key=lambda f: (_label(_resolution(f)), *_video_rank(f)), reverse=True):
+        add(f, [f['format_id']], _container(f), _size_text(f))
 
-    # 2. H.264 + AAC merged by the app, for resolutions not covered above
-    if best_m4a:
-        for f in sorted((f for f in video_only if _is_avc(f) and f.get('ext') == 'mp4'), key=_quality, reverse=True):
-            add(_resolution(f), f, [f['format_id'], best_m4a['format_id']],
-                _detail('MP4', 'H.264', _size_text(f, best_m4a)))
+    # 2. Separate video + audio, merged by the app, for resolutions not covered above
+    if best_audio:
+        for f in sorted(video_only, key=lambda f: (_label(_resolution(f)), *_video_rank(f)), reverse=True):
+            add(f, [f['format_id'], best_audio['format_id']], _container(f, best_audio),
+                _size_text(f, best_audio))
 
     # 3. Silent videos (e.g. GIF-style posts) have no audio to merge
     if not audio_only and not progressive:
-        for f in sorted(video_only, key=_quality, reverse=True):
-            add(_resolution(f), f, [f['format_id']],
-                _detail((f.get('ext') or '').upper(), _codec(f.get('vcodec')), 'No audio', _size_text(f)))
+        for f in sorted(video_only, key=lambda f: (_label(_resolution(f)), *_video_rank(f)), reverse=True):
+            add(f, [f['format_id']], _container(f), 'No audio', _size_text(f))
 
     video = sorted(choices.values(), key=lambda c: c['height'], reverse=True)
 
     audio = []
-    best_audio = best_m4a or max(audio_only, key=_audio_rank, default=None)
     if best_audio:
         abr = best_audio.get('abr')
-        ext = 'm4a' if best_audio is best_m4a else best_audio.get('ext')
-        audio.append({'id': 'audio', 'label': 'Audio',
-                      'detail': _detail((ext or '').upper(), _codec(best_audio.get('acodec')),
-                                        f'{abr:.0f} kbps' if abr else None, _size_text(best_audio)),
-                      'format_ids': [best_audio['format_id']], 'kind': 'audio', 'height': 0, 'ext': ext})
+        container = _audio_container(best_audio)
+        audio.append({'id': 'audio', 'label': 'Audio', 'kind': 'audio', 'height': 0, 'ext': container,
+                      'format_ids': [best_audio['format_id']], 'playable': True,
+                      'detail': _detail(container.upper(), _codec(best_audio.get('acodec')),
+                                        f'{abr:.0f} kbps' if abr else None, _size_text(best_audio))})
 
     if not video and not audio and formats:
         # No usable format metadata (common for generic extractors): let yt-dlp pick
         video = [{'id': 'best', 'label': 'Best', 'detail': 'Best single file', 'format_ids': ['best'],
-                  'kind': 'video', 'height': 0, 'ext': info.get('ext')}]
+                  'kind': 'video', 'height': 0, 'ext': 'mp4', 'playable': True}]
 
     return video + audio
 
@@ -334,40 +364,6 @@ def extract(arg: str) -> str:
             )
     except Exception as e:
         return _err(e, logger)
-
-
-def _sidx_duration(path):
-    """Exact duration of a DASH MP4 from its segment index (sidx) box, or None.
-
-    YouTube's DASH files carry bogus header durations (roughly double) that
-    AVFoundation trusts, so the app needs the real value to merge correctly.
-    """
-    try:
-        with open(path, 'rb') as f:
-            offset, end = 0, os.fstat(f.fileno()).st_size
-            while offset + 8 <= end:
-                f.seek(offset)
-                size, kind = struct.unpack('>I4s', f.read(8))
-                header = 8
-                if size == 1:
-                    size, header = struct.unpack('>Q', f.read(8))[0], 16
-                elif size == 0:
-                    size = end - offset
-                if kind == b'sidx':
-                    body = f.read(size - header)
-                    version = body[0]
-                    timescale = struct.unpack('>I', body[8:12])[0]
-                    pos = 12 + (8 if version == 0 else 16) + 2
-                    count = struct.unpack('>H', body[pos:pos + 2])[0]
-                    pos += 2
-                    total = sum(struct.unpack('>I', body[pos + 12 * i + 4:pos + 12 * i + 8])[0] for i in range(count))
-                    return total / timescale if timescale else None
-                if kind == b'moof' or size < 8:
-                    return None  # the index, if any, precedes the first fragment
-                offset += size
-    except (OSError, struct.error, IndexError):
-        pass
-    return None
 
 
 def download(arg: str) -> str:
@@ -423,7 +419,12 @@ def download(arg: str) -> str:
             result = ydl.process_ie_result(copy.deepcopy(raw), download=True)
             # Processing fills in fields the raw result lacks, e.g. a placeholder
             # title for untitled TikToks
-            processed.update(title=result.get('title'), id=result.get('id'))
+            processed.update(
+                title=result.get('title'), id=result.get('id'),
+                artist=result.get('artist') or ', '.join(result.get('artists') or [])
+                or result.get('uploader') or result.get('channel'),
+                date=(result.get('release_date') or result.get('upload_date') or '')[:4],
+                url=result.get('webpage_url'))
             if len(files) == before:
                 # Already-downloaded files don't fire a "finished" hook
                 path = (result.get('requested_downloads') or [{}])[0].get('filepath')
@@ -456,8 +457,9 @@ def download(arg: str) -> str:
                     logger.warning('Got HTTP 403, retrying with fresh URLs')
                     remove_files()
             job['status'] = 'finished'
-            return _ok(files=files, durations=[_sidx_duration(f) for f in files],
-                       title=processed.get('title') or raw.get('title'), id=processed.get('id') or raw.get('id'))
+            return _ok(files=files, title=processed.get('title') or raw.get('title'),
+                       id=processed.get('id') or raw.get('id'), artist=processed.get('artist'),
+                       date=processed.get('date'), url=processed.get('url'))
     except Exception as e:
         if isinstance(e, Cancelled) or job['cancel']:
             job['status'] = 'cancelled'

@@ -1,5 +1,6 @@
 import Foundation
 import JavaScriptCore
+import VideoToolbox
 
 struct BridgeError: LocalizedError {
     let message: String
@@ -27,6 +28,8 @@ actor PythonRuntime {
                 var settings: [String: Any] = [
                     "cache_dir": AppPaths.ytdlpCache.path,
                     "cookie_file": CookieStore.cookieFile.path,
+                    // Decides whether 1440p/4K (AV1-only on YouTube) plays natively
+                    "av1_decode": VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1),
                 ]
                 #if DEBUG
                 settings["verbose"] = true

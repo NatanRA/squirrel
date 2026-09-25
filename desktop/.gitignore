@@ -4,3 +4,4 @@ macos/App/Info.plist
 windows/.gradle/
 windows/.kotlin/
 windows/build/
+macos/ShareExtension/Info.plist

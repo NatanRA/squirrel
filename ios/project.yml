@@ -29,6 +29,7 @@ targets:
         type: folder
         buildPhase: resources
     dependencies:
+      - target: SquirrelShare
       - framework: Vendor/Python.xcframework
         embed: true
       - framework: Vendor/FFmpeg.xcframework
@@ -89,3 +90,29 @@ targets:
       - name: Install Python
         script: "\"$PROJECT_DIR/scripts/install_python.sh\""
         basedOnDependencyAnalysis: false
+
+  # "Squirrel" in the share sheet; hands links to the app (see ShareViewController.swift)
+  SquirrelShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ShareExtension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.natan.ytdlp.share
+        PRODUCT_NAME: SquirrelShare
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Squirrel
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true

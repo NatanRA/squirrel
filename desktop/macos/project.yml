@@ -20,6 +20,7 @@ targets:
       - path: App/Assets.xcassets
     dependencies:
       - sdk: VideoToolbox.framework
+      - target: SquirrelShare
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.natan.squirrel
@@ -44,7 +45,42 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: Squirrel is open source. Powered by yt-dlp and FFmpeg.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.natan.squirrel
+            # squirrel://download?url=…, sent by the Share menu extension
+            CFBundleURLSchemes: [squirrel]
     postBuildScripts:
       - name: Embed engine
         script: "\"$PROJECT_DIR/scripts/embed_runtime.sh\""
         basedOnDependencyAnalysis: false
+
+  # "Squirrel" in the Share menu; hands links to the app (see ShareViewController.swift)
+  SquirrelShare:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: ShareExtension
+    entitlements:
+      path: ShareExtension/SquirrelShare.entitlements
+      properties:
+        # Extensions must be sandboxed
+        com.apple.security.app-sandbox: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.natan.squirrel.share
+        PRODUCT_NAME: SquirrelShare
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Squirrel
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true

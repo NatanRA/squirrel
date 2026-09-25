@@ -66,6 +66,7 @@ struct ContentView: View {
             }
         }
         .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
+        .onOpenURL(perform: handleOpenURL)
     }
 
     private var footer: some View {
@@ -128,6 +129,15 @@ struct ContentView: View {
               let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
               ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
         urlText = url.absoluteString
+    }
+
+    /// squirrel://download?url=<link>, sent by the Share menu extension.
+    private func handleOpenURL(_ url: URL) {
+        guard let link = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "url" })?.value, !link.isEmpty else { return }
+        info = nil
+        urlText = link
+        fetch()
     }
 
     private func fetch() {

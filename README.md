@@ -15,7 +15,7 @@ links to the desktop app.
 | YouTube's JS challenges | JavaScriptCore | V8 via Jetpack JavaScriptEngine | JavaScriptCore | [Deno](https://deno.com) |
 | Merging streams | Embedded FFmpeg (remux only) | Same FFmpeg code via JNI | Same FFmpeg code as a library | Same |
 | Where files go | Photos (videos), Files › Squirrel (audio) | Movies/Squirrel (Gallery), Music/Squirrel | ~/Downloads/Squirrel (you can change it) | Same |
-| Getting links in | Paste, `squirrel://` URL, Shortcuts | Paste, **share sheet**, `squirrel://` URL | Paste, browser extension | Same |
+| Getting links in | Paste, **share sheet**, `squirrel://` URL | Paste, **share sheet**, `squirrel://` URL | Paste, **Share menu**, browser extension | Paste, browser extension |
 | Package | Ad-hoc signed IPA (~25 MB) | APK per CPU type (~21 MB) | Disk image per CPU type | MSI installer |
 
 None of this can go in the App Store or Google Play: both stores reject apps that download from
@@ -176,8 +176,10 @@ WINDOWS_MSI=/path/to/Squirrel-1.2.3.msi ./scripts/release.sh v1.2.3
 
 ## Using it
 
-- Paste a link and tap **Download**, then pick a format. On Android you can also **share** a link
-  from YouTube, a browser, or any app and pick **Squirrel**.
+- Paste a link and tap **Download**, then pick a format. On a phone or Mac you can also **share** a
+  link from YouTube, a browser, or any app and pick **Squirrel**; the app opens with the formats
+  ready. On a Mac, turn it on first in System Settings › General › Login Items & Extensions ›
+  Sharing.
 - **Settings › Pasting (phones):** with **Auto-Paste Copied Links** on, opening Squirrel after
   copying a link pastes it and shows the formats. On iOS, set Settings › Apps › Squirrel ›
   **Paste from Other Apps** to **Allow** so iOS doesn't ask each time.
@@ -200,9 +202,9 @@ WINDOWS_MSI=/path/to/Squirrel-1.2.3.msi ./scripts/release.sh v1.2.3
   Android, any folder the system file picker offers.
 - **Updates:** **Check Now**, **Nightly Builds** (YouTube fixes before they reach a
   stable release), and **Revert to Built-in Version**.
-- **iOS only:** videos go straight into Photos, moved rather than copied (Settings › Saving). To
-  share from YouTube, make a Shortcut that opens `squirrel://download?url=` plus the Shortcut
-  Input. Links with `ytdlp://` from before the rename still work.
+- **iOS only:** videos go straight into Photos, moved rather than copied (Settings › Saving).
+  Links with `ytdlp://` from before the rename still work. With a free Apple ID, AltStore and
+  SideStore count the share extension as one more app ID.
 
 ## Limitations
 

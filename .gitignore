@@ -4,6 +4,7 @@ ios/Vendor/
 ios/Squirrel.xcodeproj/
 ios/YTDL.xcodeproj/
 ios/App/Info.plist
+ios/ShareExtension/Info.plist
 
 # Android
 android/.gradle/

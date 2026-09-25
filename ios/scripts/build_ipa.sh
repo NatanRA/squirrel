@@ -24,6 +24,7 @@ APP="$BUILD/dd/Build/Products/Release-iphoneos/Squirrel.app"
 
 # Ad-hoc sign inside-out so tools that expect a signature (e.g. TrollStore) accept it.
 find "$APP/Frameworks" -maxdepth 1 -name "*.framework" -print0 | xargs -0 -n1 codesign --force --sign - --timestamp=none
+find "$APP/PlugIns" -maxdepth 1 -name "*.appex" -print0 | xargs -0 -n1 codesign --force --sign - --timestamp=none
 codesign --force --sign - --timestamp=none "$APP"
 
 mkdir -p "$BUILD/Payload"

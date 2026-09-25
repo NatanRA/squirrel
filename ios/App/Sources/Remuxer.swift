@@ -29,7 +29,7 @@ enum Remuxer {
                         var error = [CChar](repeating: 0, count: 512)
                         let status = ytdl_remux(inputPointers, Int32(paths.count), outputPath, muxer,
                                                 tagPointers, Int32(tags.count / 2), &error, error.count)
-                        return status == 0 ? nil : String(cString: error)
+                        return status == 0 ? nil : String(decoding: error.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
                     }
                 }
                 if let message {

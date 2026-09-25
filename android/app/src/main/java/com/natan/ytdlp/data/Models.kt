@@ -61,7 +61,7 @@ data class DownloadItem(
     val choice: FormatChoice,
     val state: DownloadState,
     val error: String? = null,
-    /** MediaStore entry in Movies/yt-dlp or Music/yt-dlp. */
+    /** MediaStore entry in Movies/Squirrel or Music/Squirrel. */
     val contentUri: String? = null,
     val mimeType: String? = null,
     val fileType: String? = null,

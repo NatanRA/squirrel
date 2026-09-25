@@ -17,10 +17,10 @@ import com.natan.ytdlp.ui.LoginSite
 import com.natan.ytdlp.ui.MainScreen
 import com.natan.ytdlp.ui.SettingsScreen
 import com.natan.ytdlp.ui.SignInScreen
-import com.natan.ytdlp.ui.YtdlpTheme
+import com.natan.ytdlp.ui.SquirrelTheme
 
 class MainActivity : ComponentActivity() {
-    /** A link shared into the app (share sheet or ytdlp://download?url=...). */
+    /** A link shared into the app (share sheet or squirrel://download?url=...). */
     private val sharedUrl = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -28,8 +28,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) handle(intent)
         setContent {
-            YtdlpTheme {
-                YtdlpApp(sharedUrl.value) { sharedUrl.value = null }
+            SquirrelTheme {
+                SquirrelApp(sharedUrl.value) { sharedUrl.value = null }
             }
         }
     }
@@ -43,7 +43,8 @@ class MainActivity : ComponentActivity() {
         val text = when (intent?.action) {
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
             Intent.ACTION_VIEW -> intent.data?.let { uri ->
-                if (uri.scheme == "ytdlp") uri.getQueryParameter("url") else uri.toString()
+                // ytdlp:// is the scheme from before the rename
+                if (uri.scheme == "squirrel" || uri.scheme == "ytdlp") uri.getQueryParameter("url") else uri.toString()
             }
             else -> null
         } ?: return
@@ -60,7 +61,7 @@ private sealed interface Screen {
 }
 
 @Composable
-private fun YtdlpApp(sharedUrl: String?, onSharedUrlConsumed: () -> Unit) {
+private fun SquirrelApp(sharedUrl: String?, onSharedUrlConsumed: () -> Unit) {
     var screen by remember { mutableStateOf<Screen>(Screen.Main) }
     val app = App.instance
 

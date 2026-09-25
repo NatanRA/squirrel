@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Squirrel</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/icon-32.png" alt="" width="20" height="20">
+    <h1>Squirrel</h1>
+  </header>
+
+  <form id="form">
+    <input id="url" type="url" placeholder="Paste a link" autocomplete="off" spellcheck="false" required>
+    <button id="fetch" type="submit">Get</button>
+  </form>
+
+  <p id="message" class="message" hidden></p>
+
+  <section id="formats" hidden>
+    <div class="video-title" id="title"></div>
+    <div id="video-group" class="group" hidden>
+      <h2>Video</h2>
+      <ul id="video"></ul>
+    </div>
+    <div id="audio-group" class="group" hidden>
+      <h2>Audio only</h2>
+      <ul id="audio"></ul>
+    </div>
+  </section>
+
+  <section id="jobs-section" hidden>
+    <h2>Downloads <button id="clear" class="link" type="button">Clear</button></h2>
+    <ul id="jobs"></ul>
+  </section>
+
+  <footer id="footer"></footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

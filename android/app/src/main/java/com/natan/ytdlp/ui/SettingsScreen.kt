@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.natan.ytdlp.App
@@ -140,7 +141,7 @@ fun SettingsScreen(onBack: () -> Unit, onAdvanced: () -> Unit, onSignIn: (LoginS
                 )
             }
             Footer(
-                "Signing in lets yt-dlp download videos that need an account. YouTube may flag accounts used " +
+                "Signing in lets Squirrel download videos that need an account. YouTube may flag accounts used " +
                     "this way, so consider a spare account for YouTube.",
             )
 
@@ -150,6 +151,9 @@ fun SettingsScreen(onBack: () -> Unit, onAdvanced: () -> Unit, onSignIn: (LoginS
                 headlineContent = { Text("Advanced") },
                 trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
             )
+
+            HorizontalDivider()
+            AboutSection()
         }
     }
 
@@ -190,6 +194,38 @@ fun SettingsScreen(onBack: () -> Unit, onAdvanced: () -> Unit, onSignIn: (LoginS
             confirmButton = { TextButton(onClick = { error = null }) { Text("OK") } },
         )
     }
+}
+
+/** Where to find the source and the licenses of what Squirrel is built on. */
+private const val SOURCE_URL = "https://github.com/FormulaLatest/ytdlp-mobile"
+
+@Composable
+private fun AboutSection() {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val version = remember {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
+    }
+    Header("About")
+    ListItem(
+        headlineContent = { Text("Squirrel") },
+        supportingContent = { Text("Powered by yt-dlp and FFmpeg") },
+        trailingContent = { version?.let { Text(it) } },
+    )
+    ListItem(
+        modifier = Modifier.clickable { uriHandler.openUri("$SOURCE_URL/blob/main/THIRD_PARTY_NOTICES.md") },
+        headlineContent = { Text("Open-Source Licenses") },
+        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+    )
+    ListItem(
+        modifier = Modifier.clickable { uriHandler.openUri(SOURCE_URL) },
+        headlineContent = { Text("Source Code") },
+        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+    )
+    Footer(
+        "Squirrel is free, open-source software built on yt-dlp (public domain), FFmpeg (LGPL 2.1) " +
+            "and Python. It isn't affiliated with YouTube or any site it downloads from.",
+    )
 }
 
 /** One line describing what the automatic updater is doing. */

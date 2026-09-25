@@ -3,6 +3,11 @@
 
 #include <stddef.h>
 
+#ifndef __clang__  // nullability annotations are clang-only (the Windows build uses mingw gcc)
+#define _Nonnull
+#define _Nullable
+#endif
+
 /// Copies the first video and first audio stream found across `inputs` into a
 /// new file at `output`, without re-encoding. Used both to merge yt-dlp's
 /// separate video/audio downloads and to rewrap single files into a clean

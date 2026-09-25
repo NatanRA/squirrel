@@ -1,6 +1,7 @@
 # iOS
 ios/build/
 ios/Vendor/
+ios/Squirrel.xcodeproj/
 ios/YTDL.xcodeproj/
 ios/App/Info.plist
 

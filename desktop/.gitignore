@@ -1,0 +1,6 @@
+build/
+macos/Squirrel.xcodeproj/
+macos/App/Info.plist
+windows/.gradle/
+windows/.kotlin/
+windows/build/

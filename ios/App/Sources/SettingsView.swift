@@ -24,6 +24,7 @@ struct SettingsView: View {
                 Section {
                     NavigationLink("Advanced") { AdvancedSettingsView() }
                 }
+                aboutSection
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -71,7 +72,7 @@ struct SettingsView: View {
         } header: {
             Text("Saving")
         } footer: {
-            Text("Audio stays in the app and in Files › yt-dlp. So do videos Photos can't play, like 4K AV1 on older iPhones.")
+            Text("Audio stays in the app and in Files › Squirrel. So do videos Photos can't play, like 4K AV1 on older iPhones.")
         }
     }
 
@@ -125,7 +126,28 @@ struct SettingsView: View {
         } header: {
             Text("Accounts")
         } footer: {
-            Text("Signing in lets yt-dlp download videos that need an account. Swipe a site to sign out. YouTube may flag accounts used this way, so consider a spare account for YouTube.")
+            Text("Signing in lets Squirrel download videos that need an account. Swipe a site to sign out. YouTube may flag accounts used this way, so consider a spare account for YouTube.")
+        }
+    }
+
+    // MARK: - About
+
+    private static let sourceURL = URL(string: "https://github.com/FormulaLatest/ytdlp-mobile")!
+
+    private var aboutSection: some View {
+        Section {
+            LabeledContent {
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+            } label: {
+                Text("Squirrel")
+                Text("Powered by yt-dlp and FFmpeg")
+            }
+            Link("Open-Source Licenses", destination: Self.sourceURL.appending(path: "blob/main/THIRD_PARTY_NOTICES.md"))
+            Link("Source Code", destination: Self.sourceURL)
+        } header: {
+            Text("About")
+        } footer: {
+            Text("Squirrel is free, open-source software built on yt-dlp (public domain), FFmpeg (LGPL 2.1) and Python. It isn't affiliated with YouTube or any site it downloads from.")
         }
     }
 

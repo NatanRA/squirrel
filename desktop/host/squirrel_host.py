@@ -119,6 +119,7 @@ def _has_js_host():
 # region: commands
 
 _phases: dict[str, str] = {}  # job id -> "merging" once yt-dlp is done
+_early_cancels: set[str] = set()  # cancelled before yt-dlp registered the job
 
 
 def cmd_start(args):
@@ -142,6 +143,9 @@ def cmd_download(args):
     out_dir = args.get('out_dir') or load_settings()['download_dir']
     work = os.path.join(CACHE_DIR, 'work', job_id)
     try:
+        if job_id in _early_cancels:
+            _early_cancels.discard(job_id)
+            return {'ok': False, 'cancelled': True, 'error': 'Cancelled'}
         result = json.loads(ytdl_bridge.download(json.dumps({
             'url': args['url'], 'format_ids': args['format_ids'], 'out_dir': work, 'job_id': job_id})))
         if not result.get('ok'):
@@ -158,6 +162,7 @@ def cmd_download(args):
         return {'ok': False, 'error': str(e) or type(e).__name__, 'traceback': traceback.format_exc()}
     finally:
         _phases.pop(job_id, None)
+        _early_cancels.discard(job_id)  # a retry may reuse the id
         remux.remove_tree(work)
 
 
@@ -170,6 +175,8 @@ def cmd_progress(args):
 
 
 def cmd_cancel(args):
+    if cmd_progress(args).get('status') == 'unknown':
+        _early_cancels.add(args['job_id'])  # the download hasn't reached yt-dlp yet
     return json.loads(ytdl_bridge.cancel(json.dumps({'job_id': args['job_id']})))
 
 

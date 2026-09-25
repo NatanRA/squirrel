@@ -29,17 +29,20 @@ val runtimeTarget = when {
     else -> "linux-x86_64"
 }
 val resourcesOs = runtimeTarget.substringBefore('-')
+val runtimeDir = rootDir.resolve("../build/runtime-$runtimeTarget")
 val stageRuntime by tasks.registering(Sync::class) {
-    val runtime = rootDir.resolve("../build/runtime-$runtimeTarget")
-    doFirst {
-        check(runtime.resolve("app/squirrel_host.py").isFile) {
-            "Missing $runtime. Run desktop/scripts/build_runtime.sh $runtimeTarget first."
-        }
-    }
-    from(runtime)
+    from(runtimeDir)
     into(layout.buildDirectory.dir("app-resources/$resourcesOs/runtime"))
 }
-tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(stageRuntime) }
+tasks.matching { it.name == "prepareAppResources" }.configureEach {
+    dependsOn(stageRuntime)
+    // Here rather than in stageRuntime, which Gradle skips when the folder is missing
+    doFirst {
+        check(runtimeDir.resolve("app/squirrel_host.py").isFile) {
+            "Missing $runtimeDir. Run desktop/scripts/build_runtime.sh $runtimeTarget first."
+        }
+    }
+}
 
 compose.desktop {
     application {
@@ -54,6 +57,7 @@ compose.desktop {
             modules("java.naming", "jdk.unsupported")
             windows {
                 iconFile.set(project.file("icon.ico"))
+                menu = true
                 menuGroup = "Squirrel"
                 shortcut = true
                 // Installs into %LOCALAPPDATA%, so no admin prompt and the engine can update itself

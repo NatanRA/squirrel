@@ -27,14 +27,14 @@ Always the latest release (while this repo is private, sign in to GitHub first):
 
 | Platform | Download | Install |
 |---|---|---|
-| **Android** 10+ | [Squirrel-arm64.apk](https://github.com/FormulaLatest/ytdlp-mobile/releases/latest/download/Squirrel-arm64.apk) | Open it on the phone and allow installing from your browser or file manager, or run `adb install Squirrel-arm64.apk` |
-| **iOS** 18+ | [Squirrel.ipa](https://github.com/FormulaLatest/ytdlp-mobile/releases/latest/download/Squirrel.ipa) | Sideload with AltStore, SideStore, Sideloadly or TrollStore |
-| **Mac** (Apple silicon), macOS 14+ | [Squirrel-macos-arm64.dmg](https://github.com/FormulaLatest/ytdlp-mobile/releases/latest/download/Squirrel-macos-arm64.dmg) | Drag Squirrel to Applications. It isn't notarized, so the first time, right-click it and choose **Open** |
-| **Windows** 10/11 (x64) | [Squirrel.msi](https://github.com/FormulaLatest/ytdlp-mobile/releases/latest/download/Squirrel.msi) | Run the installer. It installs just for you, so no admin rights are needed. SmartScreen may warn about an unknown publisher: choose **More info › Run anyway** |
-| **Browser extension** | [Squirrel-extension.zip](https://github.com/FormulaLatest/ytdlp-mobile/releases/latest/download/Squirrel-extension.zip) | See [extension/README.md](extension/README.md). Needs the Mac or Windows app installed |
-| Android emulator (Intel) | [Squirrel-x86_64.apk](https://github.com/FormulaLatest/ytdlp-mobile/releases/latest/download/Squirrel-x86_64.apk) | `adb install Squirrel-x86_64.apk` |
+| **Android** 10+ | [Squirrel-arm64.apk](https://github.com/FormulaLatest/squirrel/releases/latest/download/Squirrel-arm64.apk) | Open it on the phone and allow installing from your browser or file manager, or run `adb install Squirrel-arm64.apk` |
+| **iOS** 18+ | [Squirrel.ipa](https://github.com/FormulaLatest/squirrel/releases/latest/download/Squirrel.ipa) | Sideload with AltStore, SideStore, Sideloadly or TrollStore |
+| **Mac** (Apple silicon), macOS 14+ | [Squirrel-macos-arm64.dmg](https://github.com/FormulaLatest/squirrel/releases/latest/download/Squirrel-macos-arm64.dmg) | Drag Squirrel to Applications. It isn't notarized, so the first time, right-click it and choose **Open** |
+| **Windows** 10/11 (x64) | [Squirrel.msi](https://github.com/FormulaLatest/squirrel/releases/latest/download/Squirrel.msi) | Run the installer. It installs just for you, so no admin rights are needed. SmartScreen may warn about an unknown publisher: choose **More info › Run anyway** |
+| **Browser extension** | [Squirrel-extension.zip](https://github.com/FormulaLatest/squirrel/releases/latest/download/Squirrel-extension.zip) | See [extension/README.md](extension/README.md). Needs the Mac or Windows app installed |
+| Android emulator (Intel) | [Squirrel-x86_64.apk](https://github.com/FormulaLatest/squirrel/releases/latest/download/Squirrel-x86_64.apk) | `adb install Squirrel-x86_64.apk` |
 
-Older versions and changes are on the [releases page](https://github.com/FormulaLatest/ytdlp-mobile/releases).
+Older versions and changes are on the [releases page](https://github.com/FormulaLatest/squirrel/releases).
 To publish a new release, run `./scripts/release.sh vX.Y.Z` on a Mac (see [Releasing](#releasing)).
 
 ## Layout

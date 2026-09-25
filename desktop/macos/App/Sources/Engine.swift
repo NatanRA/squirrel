@@ -93,7 +93,7 @@ final class Engine: @unchecked Sendable {
         stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let chunk = handle.availableData
             if chunk.isEmpty { handle.readabilityHandler = nil }
-            self?.queue.async { self?.receive(chunk) }
+            self?.queue.async { self?.receive(chunk, from: process) }
         }
         process.terminationHandler = { [weak self] ended in
             self?.queue.async { self?.stopped(ended) }
@@ -104,7 +104,9 @@ final class Engine: @unchecked Sendable {
         buffer.removeAll()
     }
 
-    private func receive(_ chunk: Data) {
+    private func receive(_ chunk: Data, from sender: Process) {
+        // Late output from an engine a restart replaced would corrupt the new one's stream.
+        guard sender === process else { return }
         buffer.append(chunk)
         while let newline = buffer.firstIndex(of: 0x0A) {
             let line = buffer[buffer.startIndex..<newline]

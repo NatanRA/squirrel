@@ -197,7 +197,7 @@ fun SettingsScreen(onBack: () -> Unit, onAdvanced: () -> Unit, onSignIn: (LoginS
 }
 
 /** Where to find the source and the licenses of what Squirrel is built on. */
-private const val SOURCE_URL = "https://github.com/FormulaLatest/ytdlp-mobile"
+private const val SOURCE_URL = "https://github.com/FormulaLatest/squirrel"
 
 @Composable
 private fun AboutSection() {

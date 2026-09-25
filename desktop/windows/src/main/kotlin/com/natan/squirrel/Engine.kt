@@ -72,8 +72,10 @@ object Engine {
         if (!java.io.File(command.first()).exists()) {
             throw EngineException("The download engine is missing (${Paths.runtime}). Reinstall Squirrel.")
         }
+        // A GUI app has no console, so keep the engine's errors in a log file
+        Paths.data.mkdirs()
         val started = ProcessBuilder(command)
-            .redirectError(ProcessBuilder.Redirect.INHERIT)
+            .redirectError(ProcessBuilder.Redirect.appendTo(java.io.File(Paths.data, "engine.log")))
             .start()
         process = started
         input = started.outputStream.bufferedWriter(Charsets.UTF_8)

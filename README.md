@@ -15,6 +15,19 @@ lands in Photos/Gallery or your music folder.
 | Getting links in | Paste, `ytdlp://` URL, Shortcuts | Paste, **share sheet**, `ytdlp://` URL |
 | Package | Ad-hoc signed IPA (~25 MB) | APK per CPU type (~21 MB) |
 
+## Download
+
+Always the latest release (sign in to GitHub first, since this repo is private):
+
+| Platform | Download | Install |
+|---|---|---|
+| **Android** 10+ | [yt-dlp-arm64.apk](https://github.com/FormulaLatest/ytdlp-mobile/releases/latest/download/yt-dlp-arm64.apk) | Open it on the phone and allow installing from your browser or file manager, or run `adb install yt-dlp-arm64.apk` |
+| **iOS** 18+ | [yt-dlp.ipa](https://github.com/FormulaLatest/ytdlp-mobile/releases/latest/download/yt-dlp.ipa) | Sideload with AltStore, SideStore, Sideloadly or TrollStore |
+| Android emulator (Intel) | [yt-dlp-x86_64.apk](https://github.com/FormulaLatest/ytdlp-mobile/releases/latest/download/yt-dlp-x86_64.apk) | `adb install yt-dlp-x86_64.apk` |
+
+Older versions and changes are on the [releases page](https://github.com/FormulaLatest/ytdlp-mobile/releases).
+To publish a new release, run `./scripts/release.sh vX.Y.Z` (it builds both apps and uploads them).
+
 ## Layout
 
 ```

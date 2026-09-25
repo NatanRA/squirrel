@@ -16,3 +16,6 @@ android/vendor/
 
 __pycache__/
 .DS_Store
+
+# Release artifacts
+build/

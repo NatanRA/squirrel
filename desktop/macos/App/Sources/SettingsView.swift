@@ -86,7 +86,7 @@ struct SettingsView: View {
             } header: {
                 Text("About")
             } footer: {
-                Text("Squirrel is free, open-source software built on yt-dlp (public domain), FFmpeg (LGPL 2.1) and Python. It isn't affiliated with YouTube or any site it downloads from.")
+                Text("Squirrel is free software under the GPL 3.0, built on yt-dlp (public domain), FFmpeg (LGPL 2.1) and Python. It isn't affiliated with YouTube or any site it downloads from.")
                     .foregroundStyle(.secondary)
             }
         }

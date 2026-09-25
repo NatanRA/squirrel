@@ -214,7 +214,9 @@ WINDOWS_MSI=/path/to/Squirrel-1.2.3.msi ./scripts/release.sh v1.2.3
 
 ## License
 
-Squirrel bundles yt-dlp, FFmpeg, Python and other projects under their own licenses; see
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Squirrel is free software under the [GNU General Public License v3.0](LICENSE): you can use,
+change and share it, and anything you distribute that's built from it must stay open source under
+the same license. It bundles yt-dlp, FFmpeg, Python and other projects under their own licenses,
+all compatible with the GPL; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 Squirrel isn't affiliated with yt-dlp, YouTube or any site it downloads from. Only download what
 you have the right to.

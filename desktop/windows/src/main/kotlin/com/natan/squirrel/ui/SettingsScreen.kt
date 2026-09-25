@@ -162,7 +162,7 @@ fun SettingsScreen(appVersion: String, onBack: () -> Unit) {
                 trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
             )
             Footer(
-                "Squirrel is free, open-source software built on yt-dlp (public domain), FFmpeg (LGPL 2.1) " +
+                "Squirrel is free software under the GPL 3.0, built on yt-dlp (public domain), FFmpeg (LGPL 2.1) " +
                     "and Python. It isn't affiliated with YouTube or any site it downloads from.",
             )
         }

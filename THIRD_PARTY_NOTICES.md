@@ -1,7 +1,7 @@
 # Third-party notices
 
-Squirrel is built on other open-source projects. This lists what each app ships, with its
-license. Full license texts come with each project's source; the build scripts in this
+Squirrel itself is licensed under the GNU GPL v3.0 (see [LICENSE](LICENSE)). It is built on
+other open-source projects. This lists what each app ships, with its license. Full license texts come with each project's source; the build scripts in this
 repository show exactly which versions are bundled and where they are downloaded from.
 
 ## In every app

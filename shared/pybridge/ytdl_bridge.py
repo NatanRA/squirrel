@@ -70,7 +70,8 @@ def _base_opts(logger):
         'noprogress': True,
         'noplaylist': True,
         'logger': logger,
-        'js_runtimes': {'jsc': {}},
+        # The app's own JS engine by default; desktop builds without one pass Deno
+        'js_runtimes': _config.get('js_runtimes') or {'jsc': {}},
         'socket_timeout': 30,
         'retries': 5,
         'fragment_retries': 10,
@@ -81,6 +82,9 @@ def _base_opts(logger):
         opts['cachedir'] = _config['cache_dir']
     if _config.get('extractor_args'):
         opts['extractor_args'] = _config['extractor_args']
+    if _config.get('cookies_from_browser'):
+        # Desktop: read the cookies of a browser the user is signed in with
+        opts['cookiesfrombrowser'] = (_config['cookies_from_browser'],)
     cookie_file = _config.get('cookie_file')
     if cookie_file and os.path.exists(cookie_file) and _config.get('cache_dir'):
         # yt-dlp writes the jar back on exit; give it a private copy so the

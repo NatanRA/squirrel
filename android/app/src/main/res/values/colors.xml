@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="icon_background">#E0182E</color>
+    <!-- Squirrel's colours; keep in sync with branding/README.md -->
+    <color name="icon_background">#B8532A</color>
+    <color name="accent">#B4502A</color>
 </resources>

@@ -1,4 +1,4 @@
-name: YTDL
+name: Squirrel
 options:
   bundleIdPrefix: com.natan
   deploymentTarget:
@@ -13,7 +13,7 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
 
 targets:
-  YTDL:
+  Squirrel:
     type: application
     platform: iOS
     sources:
@@ -38,8 +38,9 @@ targets:
       - sdk: JavaScriptCore.framework
     settings:
       base:
+        # Unchanged since the rename, so existing installs update in place
         PRODUCT_BUNDLE_IDENTIFIER: com.natan.ytdlp
-        PRODUCT_NAME: YTDL
+        PRODUCT_NAME: Squirrel
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_OBJC_BRIDGING_HEADER: App/Bridge/Bridging-Header.h
         HEADER_SEARCH_PATHS:
@@ -50,11 +51,12 @@ targets:
         # utils.sh copies lib-$ARCHS, so each build must be single-arch.
         EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_STYLE: Automatic
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: yt-dlp
+        CFBundleDisplayName: Squirrel
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
@@ -79,7 +81,8 @@ targets:
         UIBackgroundModes: [processing]
         CFBundleURLTypes:
           - CFBundleURLName: com.natan.ytdlp
-            CFBundleURLSchemes: [ytdlp]
+            # squirrel://download?url=…; ytdlp:// still works from before the rename
+            CFBundleURLSchemes: [squirrel, ytdlp]
     postBuildScripts:
       - name: Install Python
         script: "\"$PROJECT_DIR/scripts/install_python.sh\""

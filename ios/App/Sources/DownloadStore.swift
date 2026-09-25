@@ -200,7 +200,7 @@ final class DownloadStore {
     nonisolated private static func addToPhotos(_ url: URL, move: Bool) async throws {
         let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
         guard status == .authorized || status == .limited else {
-            throw BridgeError(message: "Photos access is off. Allow it in Settings › Apps › yt-dlp › Photos.")
+            throw BridgeError(message: "Photos access is off. Allow it in Settings › Apps › Squirrel › Photos.")
         }
         try await PHPhotoLibrary.shared().performChanges { @Sendable in
             let options = PHAssetResourceCreationOptions()

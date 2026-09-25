@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct YTDLApp: App {
+struct SquirrelApp: App {
     @State private var store = DownloadStore()
     @State private var updates = UpdateManager()
     @State private var cookies = CookieStore()

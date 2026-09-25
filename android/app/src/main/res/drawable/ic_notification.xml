@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The acorn from branding/mark.svg, for the status bar -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24">
-    <path android:fillColor="#FFFFFF" android:pathData="M11,3h2v10.2l3.6,-3.6 1.4,1.4 -6,6 -6,-6 1.4,-1.4 3.6,3.6z M5,19h14v2h-14z" />
+    <group android:scaleX="0.037" android:scaleY="0.037"
+        android:translateX="-6.94" android:translateY="-7.28">
+        <path android:fillColor="#FFFFFF" android:pathData="M494 342 C490 300 504 270 538 252 L556 278 C532 292 522 312 526 342 Z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M300 486 C300 386 392 330 512 330 C632 330 724 386 724 486 C724 506 708 516 688 516 L336 516 C316 516 300 506 300 486 Z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M350 542 L674 542 C674 676 600 766 512 790 C424 766 350 676 350 542 Z" />
+    </group>
 </vector>

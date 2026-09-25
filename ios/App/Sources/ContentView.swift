@@ -36,8 +36,8 @@ struct ContentView: View {
                         Text(error).foregroundStyle(.red)
                     } else if let version = store.ytdlpVersion {
                         Text("yt-dlp \(UpdateManager.display(version)) · " + (videosToPhotos
-                            ? "Videos are saved to Photos, audio to Files › yt-dlp."
-                            : "Files are saved to Files › yt-dlp."))
+                            ? "Videos are saved to Photos, audio to Files › Squirrel."
+                            : "Files are saved to Files › Squirrel."))
                     } else {
                         Text("Starting yt-dlp…")
                     }
@@ -65,7 +65,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("yt-dlp")
+            .navigationTitle("Squirrel")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingSettings = true } label: {
@@ -193,11 +193,12 @@ struct ContentView: View {
         }
     }
 
-    /// Supports `ytdlp://download?url=<link>` (handy from a Shortcuts share-sheet action).
+    /// Supports `squirrel://download?url=<link>` (handy from a Shortcuts share-sheet action),
+    /// and `ytdlp://` from before the rename.
     private func handleOpenURL(_ url: URL) {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
         let link = components.queryItems?.first(where: { $0.name == "url" })?.value
-            ?? String(url.absoluteString.dropFirst("ytdlp://".count))
+            ?? String(url.absoluteString.dropFirst("\(url.scheme ?? "squirrel")://".count))
         guard !link.isEmpty else { return }
         urlText = link
         fetch()

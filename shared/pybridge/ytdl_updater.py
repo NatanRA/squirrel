@@ -47,6 +47,13 @@ def _purge_modules():
             del sys.modules[name]
 
 
+def _register_js_provider():
+    # Apps that expose their own JS engine as `_host` (iOS, Android, the Mac app)
+    # get the in-process provider; the Windows app uses yt-dlp's built-in Deno support.
+    if importlib.util.find_spec('_host') is not None:
+        import jsc_provider  # noqa: F401
+
+
 def load_ytdlp():
     """Import yt-dlp (preferring an installed update) and register the JSC provider."""
     current = _path('current')
@@ -54,7 +61,7 @@ def load_ytdlp():
         sys.path.insert(0, current)
         try:
             import yt_dlp  # noqa: F401
-            import jsc_provider  # noqa: F401
+            _register_js_provider()
             load_state['source'] = 'update'
             return
         except Exception as e:
@@ -69,7 +76,7 @@ def load_ytdlp():
                 shutil.rmtree(current, ignore_errors=True)
 
     import yt_dlp  # noqa: F401
-    import jsc_provider  # noqa: F401
+    _register_js_provider()
 
 
 def version_tuple(version):

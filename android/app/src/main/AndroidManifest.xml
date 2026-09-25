@@ -9,10 +9,10 @@
 
     <application
         android:name=".App"
-        android:label="yt-dlp"
+        android:label="Squirrel"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:theme="@style/Theme.Ytdlp"
+        android:theme="@style/Theme.Squirrel"
         android:enableOnBackInvokedCallback="true">
 
         <activity
@@ -30,11 +30,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
-            <!-- ytdlp://download?url=… (same as the iOS app) -->
+            <!-- squirrel://download?url=… (same as the iOS app); ytdlp:// still works from before the rename -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="squirrel" />
                 <data android:scheme="ytdlp" />
             </intent-filter>
         </activity>

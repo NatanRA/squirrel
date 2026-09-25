@@ -7,8 +7,8 @@ import android.webkit.MimeTypeMap
 import java.io.File
 
 /**
- * Publishes finished downloads to shared storage: videos to Movies/yt-dlp
- * (shown in the Gallery and Google Photos), audio to Music/yt-dlp (shown in
+ * Publishes finished downloads to shared storage: videos to Movies/Squirrel
+ * (shown in the Gallery and Google Photos), audio to Music/Squirrel (shown in
  * music players). No storage permission is needed for files the app creates.
  */
 object MediaStoreSaver {
@@ -26,7 +26,7 @@ object MediaStoreSaver {
             put(MediaStore.MediaColumns.DISPLAY_NAME, "${safeName(title)}.$ext")
             put(MediaStore.MediaColumns.TITLE, title)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, if (isAudio) "Music/yt-dlp" else "Movies/yt-dlp")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, if (isAudio) "Music/Squirrel" else "Movies/Squirrel")
             put(MediaStore.MediaColumns.IS_PENDING, 1)  // hidden until fully written
         }
         val resolver = context.contentResolver

@@ -131,7 +131,7 @@ fun MainScreen(sharedUrl: String?, onSharedUrlConsumed: () -> Unit, onOpenSettin
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             LargeTopAppBar(
-                title = { Text("yt-dlp") },
+                title = { Text("Squirrel") },
                 actions = {
                     IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, "Settings") }
                 },
@@ -182,7 +182,7 @@ fun MainScreen(sharedUrl: String?, onSharedUrlConsumed: () -> Unit, onOpenSettin
             item {
                 Text(
                     (version?.let { "yt-dlp ${UpdateManager.display(it)} · " } ?: "Starting yt-dlp… · ") +
-                        "Videos are saved to Movies/yt-dlp (Gallery), audio to Music/yt-dlp.",
+                        "Videos are saved to Movies/Squirrel (Gallery), audio to Music/Squirrel.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -199,7 +199,7 @@ fun MainScreen(sharedUrl: String?, onSharedUrlConsumed: () -> Unit, onOpenSettin
                         Spacer(Modifier.height(12.dp))
                         Text("No Downloads", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "Paste a link, or share one to yt-dlp from YouTube or any other app.",
+                            "Paste a link, or share one to Squirrel from YouTube or any other app.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,

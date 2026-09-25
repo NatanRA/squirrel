@@ -1,6 +1,6 @@
 #!/bin/bash
-# Build release APKs for sideloading -> build/apk/yt-dlp-arm64.apk (phones)
-# and build/apk/yt-dlp-x86_64.apk (Intel emulators).
+# Build release APKs for sideloading -> build/apk/Squirrel-arm64.apk (phones)
+# and build/apk/Squirrel-x86_64.apk (Intel emulators).
 # Signed with the Android debug key; configure your own signingConfig to change that.
 set -euo pipefail
 
@@ -14,6 +14,6 @@ cd "$ROOT"
     ${APP_VERSION:+-PappVersion=$APP_VERSION} ${APP_BUILD:+-PappBuild=$APP_BUILD}
 
 mkdir -p build/apk
-cp app/build/outputs/apk/arm64/release/app-arm64-release.apk build/apk/yt-dlp-arm64.apk
-cp app/build/outputs/apk/x86/release/app-x86-release.apk build/apk/yt-dlp-x86_64.apk
+cp app/build/outputs/apk/arm64/release/app-arm64-release.apk build/apk/Squirrel-arm64.apk
+cp app/build/outputs/apk/x86/release/app-x86-release.apk build/apk/Squirrel-x86_64.apk
 ls -la build/apk | awk 'NR>1 && $9 ~ /apk$/ {printf "Built build/apk/%s (%.1f MB)\n", $9, $5/1048576}'

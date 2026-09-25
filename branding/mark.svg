@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Squirrel's acorn. Glyph only (white); icon.svg adds the background. -->
+  <g fill="#FFFFFF">
+    <path id="stem" d="M494 342 C490 300 504 270 538 252 L556 278 C532 292 522 312 526 342 Z"/>
+    <path id="cap" d="M300 486 C300 386 392 330 512 330 C632 330 724 386 724 486 C724 506 708 516 688 516 L336 516 C316 516 300 506 300 486 Z"/>
+    <path id="nut" d="M350 542 L674 542 C674 676 600 766 512 790 C424 766 350 676 350 542 Z"/>
+  </g>
+</svg>

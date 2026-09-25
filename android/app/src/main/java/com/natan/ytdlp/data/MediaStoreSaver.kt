@@ -2,6 +2,8 @@ package com.natan.ytdlp.data
 
 import android.content.ContentValues
 import android.content.Context
+import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import java.io.File
@@ -39,6 +41,24 @@ object MediaStoreSaver {
             throw e
         }
         return Saved(uri.toString(), mime)
+    }
+
+    /** Saves into a folder chosen in Settings › Advanced (see [SaveLocations]). */
+    fun saveToFolder(context: Context, tree: Uri, file: File, title: String, isAudio: Boolean): Saved {
+        val ext = file.extension.lowercase()
+        val resolver = context.contentResolver
+        val folder = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        // A generic type keeps the name as given: with the real one, some folders add their own extension.
+        // The provider adds " (1)" on clashes.
+        val uri = DocumentsContract.createDocument(resolver, folder, "application/octet-stream", "${safeName(title)}.$ext")
+            ?: error("Couldn't create the file in the chosen folder")
+        try {
+            resolver.openOutputStream(uri)!!.use { out -> file.inputStream().use { it.copyTo(out) } }
+        } catch (e: Exception) {
+            runCatching { DocumentsContract.deleteDocument(resolver, uri) }
+            throw e
+        }
+        return Saved(uri.toString(), mimeType(ext, isAudio))
     }
 
     private fun mimeType(ext: String, isAudio: Boolean): String = when {

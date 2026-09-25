@@ -1,6 +1,7 @@
 package com.natan.ytdlp.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -9,6 +10,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -60,6 +62,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,10 +80,12 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.natan.ytdlp.App
+import com.natan.ytdlp.data.AutoPaste
 import com.natan.ytdlp.data.DownloadItem
 import com.natan.ytdlp.data.DownloadState
 import com.natan.ytdlp.data.FormatChoice
 import com.natan.ytdlp.data.LiveProgress
+import com.natan.ytdlp.data.SaveLocations
 import com.natan.ytdlp.data.UpdateManager
 import com.natan.ytdlp.data.VideoInfo
 import com.natan.ytdlp.python.PythonBridge
@@ -88,7 +93,13 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(sharedUrl: String?, onSharedUrlConsumed: () -> Unit, onOpenSettings: () -> Unit) {
+fun MainScreen(
+    sharedUrl: String?,
+    onSharedUrlConsumed: () -> Unit,
+    pastedUrl: String?,
+    onPastedUrlConsumed: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
     val context = LocalContext.current
     val repository = App.instance.repository
     val items by repository.items.collectAsStateWithLifecycle()
@@ -102,6 +113,21 @@ fun MainScreen(sharedUrl: String?, onSharedUrlConsumed: () -> Unit, onOpenSettin
     val version by produceState<String?>(null) { value = runCatching { PythonBridge.version() }.getOrNull() }
 
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
+    var pendingDelete by rememberSaveable { mutableStateOf<String?>(null) }
+    val deletePrompt = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        val id = pendingDelete
+        pendingDelete = null
+        // Approved: Android 11+ has deleted the file, and Android 10 now lets the app do it
+        if (result.resultCode == Activity.RESULT_OK && id != null) repository.delete(id)
+    }
+
+    fun delete(id: String) {
+        repository.delete(id)?.let { prompt ->
+            pendingDelete = id
+            deletePrompt.launch(IntentSenderRequest.Builder(prompt).build())
+        }
+    }
 
     fun fetch() {
         val link = url.trim()
@@ -123,6 +149,17 @@ fun MainScreen(sharedUrl: String?, onSharedUrlConsumed: () -> Unit, onOpenSettin
             url = sharedUrl
             onSharedUrlConsumed()
             fetch()
+        }
+    }
+
+    LaunchedEffect(pastedUrl) {
+        if (pastedUrl != null) {
+            onPastedUrlConsumed()
+            // Leave anything already in progress alone
+            if (url.isBlank() && !fetching && info == null && alert == null) {
+                url = pastedUrl
+                fetch()
+            }
         }
     }
 
@@ -180,9 +217,11 @@ fun MainScreen(sharedUrl: String?, onSharedUrlConsumed: () -> Unit, onOpenSettin
                 }
             }
             item {
+                val videoPlace = SaveLocations.folder(context, isAudio = false)?.name ?: "Movies/Squirrel (Gallery)"
+                val audioPlace = SaveLocations.folder(context, isAudio = true)?.name ?: "Music/Squirrel"
                 Text(
                     (version?.let { "yt-dlp ${UpdateManager.display(it)} · " } ?: "Starting yt-dlp… · ") +
-                        "Videos are saved to Movies/Squirrel (Gallery), audio to Music/Squirrel.",
+                        "Videos are saved to $videoPlace, audio to $audioPlace.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -214,7 +253,7 @@ fun MainScreen(sharedUrl: String?, onSharedUrlConsumed: () -> Unit, onOpenSettin
                     )
                 }
                 items(items, key = { it.id }) { item ->
-                    DownloadRow(item, live[item.id], onAlert = { alert = it })
+                    DownloadRow(item, live[item.id], onAlert = { alert = it }, onDelete = ::delete)
                 }
             }
         }
@@ -247,7 +286,12 @@ fun MainScreen(sharedUrl: String?, onSharedUrlConsumed: () -> Unit, onOpenSettin
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DownloadRow(item: DownloadItem, live: LiveProgress?, onAlert: (Pair<String, String>) -> Unit) {
+private fun DownloadRow(
+    item: DownloadItem,
+    live: LiveProgress?,
+    onAlert: (Pair<String, String>) -> Unit,
+    onDelete: (String) -> Unit,
+) {
     val context = LocalContext.current
     val repository = App.instance.repository
     var menu by remember { mutableStateOf(false) }
@@ -297,10 +341,11 @@ private fun DownloadRow(item: DownloadItem, live: LiveProgress?, onAlert: (Pair<
                 menu = false
                 context.getSystemService(ClipboardManager::class.java)
                     .setPrimaryClip(ClipData.newPlainText("Link", item.sourceUrl))
+                AutoPaste.markSeen(context)  // Don't paste it back on the next open
             })
             DropdownMenuItem(
                 text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                onClick = { menu = false; repository.delete(item.id) },
+                onClick = { menu = false; onDelete(item.id) },
             )
         }
     }
@@ -327,7 +372,7 @@ private fun StatusLine(item: DownloadItem, live: LiveProgress?) {
             listOf(
                 if (item.choice.isAudio) "Audio" else item.choice.label,
                 item.fileType ?: "",
-                if (item.choice.isAudio) "Music" else "Gallery",
+                item.folderName ?: if (item.choice.isAudio) "Music" else "Gallery",
             ).filter { it.isNotEmpty() }.joinToString(" · "),
         )
         DownloadState.CANCELLED -> caption("Cancelled")

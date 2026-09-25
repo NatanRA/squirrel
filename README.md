@@ -178,8 +178,13 @@ WINDOWS_MSI=/path/to/Squirrel-1.2.3.msi ./scripts/release.sh v1.2.3
 
 - Paste a link and tap **Download**, then pick a format. On Android you can also **share** a link
   from YouTube, a browser, or any app and pick **Squirrel**.
+- **Settings › Pasting (phones):** with **Auto-Paste Copied Links** on, opening Squirrel after
+  copying a link pastes it and shows the formats. On iOS, set Settings › Apps › Squirrel ›
+  **Paste from Other Apps** to **Allow** so iOS doesn't ask each time.
 - Tap a finished download to play it. Long-press for **Share**, **Retry**, **Delete** and more.
-  On a computer, double-click to open, or right-click for **Show in Finder/Folder** and more.
+  On a phone, **Delete** also removes the file from Photos or the Gallery (iOS asks you to
+  confirm); on iOS, **Remove from List** keeps the video in Photos. On a computer, double-click to
+  open, or right-click for **Show in Finder/Folder** and more.
 - **Browser extension:** click the acorn, check the link (it starts with the page you're on),
   pick a format, and the file is saved to the desktop app's download folder. Downloads keep going
   after the popup closes.
@@ -189,6 +194,10 @@ WINDOWS_MSI=/path/to/Squirrel-1.2.3.msi ./scripts/release.sh v1.2.3
 - **Settings › Accounts (computers):** **Use cookies from** reads the cookies of a browser you're
   signed in with. On Windows, Firefox works best: recent Chrome versions lock their cookies while
   Chrome is running. YouTube may flag accounts used with yt-dlp, so use a spare account there.
+- **Settings › Advanced › Save Locations (phones):** pick where videos and audio go instead of
+  Photos/Files › Squirrel (iOS) or Movies/Music › Squirrel (Android). On iOS that can be any folder
+  in the Files app, including other apps' folders like VLC or Documents, and iCloud Drive; on
+  Android, any folder the system file picker offers.
 - **Updates:** **Check Now**, **Nightly Builds** (YouTube fixes before they reach a
   stable release), and **Revert to Built-in Version**.
 - **iOS only:** videos go straight into Photos, moved rather than copied (Settings › Saving). To

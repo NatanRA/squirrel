@@ -3,10 +3,14 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(DownloadStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showingSettings = false
     @AppStorage(SaveSettings.videosToPhotosKey) private var videosToPhotos = true
+    @AppStorage(SaveSettings.Kind.video.folderNameKey) private var videoFolderName: String?
+    @AppStorage(SaveSettings.Kind.audio.folderNameKey) private var audioFolderName: String?
     @State private var urlText = ""
     @State private var isFetching = false
+    @State private var fetchTask: Task<Void, Never>?
     @State private var info: VideoInfo?
     @State private var alert: AlertMessage?
     @State private var previewURL: URL?
@@ -35,9 +39,7 @@ struct ContentView: View {
                     if let error = store.startupError {
                         Text(error).foregroundStyle(.red)
                     } else if let version = store.ytdlpVersion {
-                        Text("yt-dlp \(UpdateManager.display(version)) · " + (videosToPhotos
-                            ? "Videos are saved to Photos, audio to Files › Squirrel."
-                            : "Files are saved to Files › Squirrel."))
+                        Text("yt-dlp \(UpdateManager.display(version)) · \(savingSummary)")
                     } else {
                         Text("Starting yt-dlp…")
                     }
@@ -57,8 +59,15 @@ struct ContentView: View {
                                 .onTapGesture { open(item) }
                                 .contextMenu { menu(for: item) }
                                 .swipeActions {
-                                    Button(role: .destructive) { store.delete(item.id) } label: {
-                                        Label("Delete", systemImage: "trash")
+                                    // Not .destructive: iOS may ask first, and the row stays if the user says no
+                                    if canDelete(item) {
+                                        Button { delete(item) } label: { Label("Delete", systemImage: "trash") }
+                                            .tint(.red)
+                                    } else {
+                                        Button { store.removeFromList(item.id) } label: {
+                                            Label("Remove", systemImage: "trash")
+                                        }
+                                        .tint(.red)
                                     }
                                 }
                         }
@@ -85,6 +94,9 @@ struct ContentView: View {
             .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
             .quickLookPreview($previewURL)
             .onOpenURL(perform: handleOpenURL)
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                if phase == .active { autoPaste() }
+            }
         }
     }
 
@@ -146,17 +158,42 @@ struct ContentView: View {
         }
         Button {
             UIPasteboard.general.string = item.sourceURL
+            AutoPaste.markSeen()  // Don't paste it back on the next open
         } label: {
             Label("Copy Link", systemImage: "link")
         }
-        Button(role: .destructive) { store.delete(item.id) } label: {
-            // Videos moved into Photos stay there; this only clears the row
-            if item.fileName == nil && item.state == .finished {
-                Label("Remove from List", systemImage: "trash")
-            } else {
+        if item.savedToPhotos == true || item.folderName != nil {
+            Button { store.removeFromList(item.id) } label: {
+                Label("Remove from List", systemImage: "minus.circle")
+            }
+        }
+        if canDelete(item) {
+            Button(role: .destructive) { delete(item) } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
+    }
+
+    /// False for videos saved to Photos before Squirrel kept their Photos ID: those can only leave the list.
+    private func canDelete(_ item: DownloadItem) -> Bool {
+        item.savedToPhotos != true || item.photosAssetID != nil
+    }
+
+    private func delete(_ item: DownloadItem) {
+        Task {
+            do {
+                try await store.delete(item.id)
+            } catch {
+                alert = AlertMessage(title: "Couldn’t Delete from Photos", message: error.localizedDescription)
+            }
+        }
+    }
+
+    /// "Videos are saved to Photos, audio to VLC."
+    private var savingSummary: String {
+        let video = videosToPhotos ? "Photos" : videoFolderName ?? "Files › Squirrel"
+        let audio = audioFolderName ?? "Files › Squirrel"
+        return video == audio ? "Files are saved to \(audio)." : "Videos are saved to \(video), audio to \(audio)."
     }
 
     private var trimmedURL: String {
@@ -165,17 +202,37 @@ struct ContentView: View {
 
     private func fetch() {
         let url = trimmedURL
-        guard !url.isEmpty, !isFetching else { return }
+        guard !url.isEmpty else { return }
         fieldFocused = false
+        // A newer link replaces one still loading, e.g. a squirrel:// link over an auto-pasted one
+        fetchTask?.cancel()
         isFetching = true
-        Task {
-            defer { isFetching = false }
+        fetchTask = Task {
             do {
-                info = try await store.fetchInfo(url)
+                let result = try await store.fetchInfo(url)
+                guard !Task.isCancelled else { return }
+                info = result
             } catch {
+                guard !Task.isCancelled else { return }
                 alert = AlertMessage(title: "Couldn’t Load Link", message: error.localizedDescription)
             }
+            isFetching = false
         }
+    }
+
+    /// Pastes and looks up a newly copied link when the app comes to the front (Settings › Pasting).
+    private func autoPaste() {
+        guard isIdle else { return }
+        Task {
+            guard let link = await AutoPaste.newLink(), isIdle else { return }
+            urlText = link
+            fetch()
+        }
+    }
+
+    /// Nothing is in progress that an auto-pasted link would interrupt.
+    private var isIdle: Bool {
+        urlText.isEmpty && !isFetching && info == nil && !showingSettings && previewURL == nil && alert == nil
     }
 
     private func open(_ item: DownloadItem) {
@@ -267,7 +324,7 @@ struct DownloadRow: View {
         switch (item.savedToPhotos == true, item.fileName != nil) {
         case (true, false): "Saved to Photos"
         case (true, true): "\(fileType) · In Photos"
-        default: fileType
+        default: [fileType, item.folderName].compactMap { $0 }.joined(separator: " · ")
         }
     }
 

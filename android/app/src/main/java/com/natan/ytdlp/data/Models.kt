@@ -61,10 +61,12 @@ data class DownloadItem(
     val choice: FormatChoice,
     val state: DownloadState,
     val error: String? = null,
-    /** MediaStore entry in Movies/Squirrel or Music/Squirrel. */
+    /** MediaStore entry in Movies/Squirrel or Music/Squirrel, or a document in [folderName]. */
     val contentUri: String? = null,
     val mimeType: String? = null,
     val fileType: String? = null,
+    /** Set when the file went to a folder chosen in Settings › Advanced. */
+    val folderName: String? = null,
     val createdAt: Long,
 )
 

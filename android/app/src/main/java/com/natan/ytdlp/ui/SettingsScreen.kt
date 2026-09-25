@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PersonAdd
@@ -42,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +52,8 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.natan.ytdlp.App
+import com.natan.ytdlp.data.AutoPaste
+import com.natan.ytdlp.data.SaveLocations
 import com.natan.ytdlp.data.UpdateManager
 import com.natan.ytdlp.restartApp
 import kotlinx.coroutines.launch
@@ -77,6 +81,7 @@ fun SettingsScreen(onBack: () -> Unit, onAdvanced: () -> Unit, onSignIn: (LoginS
     var customSite by remember { mutableStateOf<String?>(null) }
     var confirmSignOutAll by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var autoPaste by remember { mutableStateOf(AutoPaste.isEnabled(app)) }
 
     LaunchedEffect(Unit) { app.updates.refreshStatus() }
 
@@ -91,6 +96,14 @@ fun SettingsScreen(onBack: () -> Unit, onAdvanced: () -> Unit, onSignIn: (LoginS
         )
     }) { padding ->
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState())) {
+            Header("Pasting")
+            ListItem(
+                headlineContent = { Text("Auto-Paste Copied Links") },
+                supportingContent = { Text("Open Squirrel after copying a link and it's pasted for you, ready to pick a format.") },
+                trailingContent = { Switch(autoPaste, { autoPaste = it; AutoPaste.setEnabled(app, it) }) },
+            )
+
+            HorizontalDivider()
             Header("Updates")
             ListItem(
                 headlineContent = { Text("yt-dlp") },
@@ -265,6 +278,16 @@ fun AdvancedScreen(onBack: () -> Unit) {
     val upToDate by updates.upToDate.collectAsStateWithLifecycle()
     var nightly by remember { mutableStateOf(updates.nightly) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var videoFolder by remember { mutableStateOf(SaveLocations.folder(context, isAudio = false)?.name) }
+    var audioFolder by remember { mutableStateOf(SaveLocations.folder(context, isAudio = true)?.name) }
+    var pickingAudioFolder by rememberSaveable { mutableStateOf(false) }
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+        if (tree == null) return@rememberLauncherForActivityResult
+        runCatching { SaveLocations.set(context, pickingAudioFolder, tree) }
+        val name = SaveLocations.folder(context, pickingAudioFolder)?.name
+        if (pickingAudioFolder) audioFolder = name else videoFolder = name
+    }
     val busy = phase is UpdateManager.Phase.Checking || phase is UpdateManager.Phase.Installing
     val pending = (phase as? UpdateManager.Phase.Ready)?.version
         ?.takeIf { UpdateManager.normalized(it) != UpdateManager.normalized(status.bundled) }
@@ -276,6 +299,18 @@ fun AdvancedScreen(onBack: () -> Unit) {
         )
     }) { padding ->
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState())) {
+            Header("Save Locations")
+            SaveLocationRow("Videos", videoFolder, default = "Movies/Squirrel (Gallery)",
+                onChoose = { pickingAudioFolder = false; folderPicker.launch(null) },
+                onReset = { SaveLocations.set(context, isAudio = false, tree = null); videoFolder = null },
+            )
+            SaveLocationRow("Audio", audioFolder, default = "Music/Squirrel",
+                onChoose = { pickingAudioFolder = true; folderPicker.launch(null) },
+                onReset = { SaveLocations.set(context, isAudio = true, tree = null); audioFolder = null },
+            )
+            Footer("Choose any folder, like one your music or video app uses. New downloads go there.")
+
+            HorizontalDivider()
             Header("yt-dlp")
             ListItem(headlineContent = { Text("Running") }, trailingContent = { Text(status.running?.let(UpdateManager::display) ?: "…") })
             ListItem(headlineContent = { Text("Built-in") }, trailingContent = { Text(status.bundled?.let(UpdateManager::display) ?: "…") })
@@ -308,6 +343,18 @@ fun AdvancedScreen(onBack: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun SaveLocationRow(title: String, folder: String?, default: String, onChoose: () -> Unit, onReset: () -> Unit) {
+    ListItem(
+        modifier = Modifier.clickable(onClick = onChoose),
+        headlineContent = { Text(title) },
+        supportingContent = { Text(folder ?: default) },
+        trailingContent = {
+            if (folder != null) IconButton(onClick = onReset) { Icon(Icons.Default.Close, "Use $default") }
+        },
+    )
 }
 
 @Composable

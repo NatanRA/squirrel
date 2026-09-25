@@ -1,7 +1,12 @@
 package com.natan.ytdlp.data
 
 import android.app.Application
+import android.app.RecoverableSecurityException
+import android.content.IntentSender
 import android.net.Uri
+import android.os.Build
+import android.provider.DocumentsContract
+import android.provider.MediaStore
 import com.natan.ytdlp.Remuxer
 import com.natan.ytdlp.python.BridgeException
 import com.natan.ytdlp.python.PythonBridge
@@ -80,13 +85,36 @@ class DownloadRepository(private val app: Application, private val scope: Corout
         scope.launch { runCatching { PythonBridge.call("cancel", JSONObject().put("job_id", id)) } }
     }
 
-    /** Removes the row and, when the app still owns it, the saved file. */
-    fun delete(id: String) {
-        val item = _items.value.firstOrNull { it.id == id } ?: return
+    /**
+     * Removes the row and the saved file in Movies/Squirrel, Music/Squirrel or a chosen folder.
+     *
+     * Returns Android's delete prompt when the file was saved by an earlier install of the app,
+     * which Android asks the user about first; call again once they approve. Null means done.
+     */
+    fun delete(id: String): IntentSender? {
+        val item = _items.value.firstOrNull { it.id == id } ?: return null
         if (item.state.isActive) cancel(id)
-        item.contentUri?.let { uri ->
-            runCatching { app.contentResolver.delete(Uri.parse(uri), null, null) }
+        val uri = item.contentUri?.let(Uri::parse)
+        if (uri != null && DocumentsContract.isDocumentUri(app, uri)) {
+            // In a folder chosen in Settings › Advanced
+            runCatching { DocumentsContract.deleteDocument(app.contentResolver, uri) }
+        } else if (uri != null) {
+            try {
+                app.contentResolver.delete(uri, null, null)
+            } catch (e: SecurityException) {
+                if (Build.VERSION.SDK_INT >= 30) {
+                    return MediaStore.createDeleteRequest(app.contentResolver, listOf(uri)).intentSender
+                }
+                if (e is RecoverableSecurityException) return e.userAction.actionIntent.intentSender
+            } catch (e: Exception) {
+                // Already gone, e.g. deleted in the Gallery
+            }
         }
+        removeRow(id)
+        return null
+    }
+
+    private fun removeRow(id: String) {
         _items.update { list -> list.filterNot { it.id == id } }
         save()
     }
@@ -146,11 +174,16 @@ class DownloadRepository(private val app: Application, private val scope: Corout
                 finished = files[0]
             }
 
-            val saved = MediaStoreSaver.save(app, finished, title, item.choice.isAudio)
+            // The folder chosen in Settings › Advanced; Movies/ or Music/Squirrel if there's none or it's gone
+            val folder = SaveLocations.folder(app, item.choice.isAudio)
+            val inFolder = folder?.let {
+                runCatching { MediaStoreSaver.saveToFolder(app, it.tree, finished, title, item.choice.isAudio) }.getOrNull()
+            }
+            val saved = inFolder ?: MediaStoreSaver.save(app, finished, title, item.choice.isAudio)
             update(id) {
                 it.copy(
                     state = DownloadState.FINISHED, contentUri = saved.uri, mimeType = saved.mimeType,
-                    fileType = finished.extension.uppercase(),
+                    fileType = finished.extension.uppercase(), folderName = folder?.name?.takeIf { inFolder != null },
                 )
             }
         } catch (e: BridgeException) {

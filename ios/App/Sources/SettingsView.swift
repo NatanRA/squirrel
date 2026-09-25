@@ -14,10 +14,12 @@ struct SettingsView: View {
     @State private var alert: AlertMessage?
     @AppStorage(SaveSettings.videosToPhotosKey) private var videosToPhotos = true
     @AppStorage(SaveSettings.keepCopyKey) private var keepCopy = false
+    @AppStorage(AutoPaste.enabledKey) private var autoPaste = false
 
     var body: some View {
         NavigationStack {
             Form {
+                pastingSection
                 savingSection
                 updatesSection
                 accountsSection
@@ -62,6 +64,18 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Pasting
+
+    private var pastingSection: some View {
+        Section {
+            Toggle("Auto-Paste Copied Links", isOn: $autoPaste)
+        } header: {
+            Text("Pasting")
+        } footer: {
+            Text("Open Squirrel after copying a link and it's pasted for you, ready to pick a format. So iOS doesn't ask each time, set Settings › Apps › Squirrel › Paste from Other Apps to Allow.")
+        }
+    }
+
     // MARK: - Saving
 
     private var savingSection: some View {
@@ -72,7 +86,7 @@ struct SettingsView: View {
         } header: {
             Text("Saving")
         } footer: {
-            Text("Audio stays in the app and in Files › Squirrel. So do videos Photos can't play, like 4K AV1 on older iPhones.")
+            Text("Audio goes to Files › Squirrel, or the folder chosen in Advanced. So do videos Photos can't play, like 4K AV1 on older iPhones. Deleting a download also deletes it from Photos; Remove from List keeps it there.")
         }
     }
 
@@ -194,13 +208,39 @@ private struct UpdateStatusRow: View {
     }
 }
 
-/// Manual controls for troubleshooting updates.
+/// Save locations, and manual controls for troubleshooting updates.
 private struct AdvancedSettingsView: View {
     @Environment(UpdateManager.self) private var updates
+    @AppStorage(SaveSettings.videosToPhotosKey) private var videosToPhotos = true
+    @AppStorage(SaveSettings.Kind.video.folderNameKey) private var videoFolderName: String?
+    @AppStorage(SaveSettings.Kind.audio.folderNameKey) private var audioFolderName: String?
+    @State private var showingFolderPicker = false
+    @State private var folderPickerKind = SaveSettings.Kind.audio
+    @State private var alert: AlertMessage?
+
+    private enum Location: Hashable { case photos, squirrel, chosenFolder, chooseFolder }
 
     var body: some View {
         @Bindable var updates = updates
         Form {
+            Section {
+                Picker("Videos", selection: videoLocation) {
+                    Text("Photos").tag(Location.photos)
+                    Text("Files › Squirrel").tag(Location.squirrel)
+                    if let videoFolderName { Text(videoFolderName).tag(Location.chosenFolder) }
+                    Text("Choose Folder…").tag(Location.chooseFolder)
+                }
+                Picker("Audio", selection: audioLocation) {
+                    Text("Files › Squirrel").tag(Location.squirrel)
+                    if let audioFolderName { Text(audioFolderName).tag(Location.chosenFolder) }
+                    Text("Choose Folder…").tag(Location.chooseFolder)
+                }
+            } header: {
+                Text("Save Locations")
+            } footer: {
+                Text("Choose a folder in any app that appears in the Files app, like VLC or Documents, or in iCloud Drive. New downloads go there.")
+            }
+
             Section {
                 LabeledContent("Running", value: updates.runningVersion.map(UpdateManager.display) ?? "…")
                 LabeledContent("Built-in", value: updates.bundledVersion.map(UpdateManager.display) ?? "…")
@@ -235,6 +275,52 @@ private struct AdvancedSettingsView: View {
         }
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
+        .fileImporter(isPresented: $showingFolderPicker, allowedContentTypes: [.folder]) { result in
+            guard case .success(let url) = result else { return }
+            let kind = folderPickerKind
+            do {
+                try SaveSettings.setFolder(url, for: kind)
+                if kind == .video { videosToPhotos = false }
+            } catch {
+                alert = AlertMessage(title: "Couldn't Use That Folder", message: error.localizedDescription)
+            }
+        }
+        .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
+    }
+
+    /// Photos, the app's own folder, or a chosen one. "Choose Folder…" opens the picker and
+    /// leaves the current choice showing until a folder is picked.
+    private var videoLocation: Binding<Location> {
+        Binding {
+            videosToPhotos ? .photos : videoFolderName == nil ? .squirrel : .chosenFolder
+        } set: { location in
+            switch location {
+            case .photos, .squirrel:
+                videosToPhotos = location == .photos
+                try? SaveSettings.setFolder(nil, for: .video)
+            case .chosenFolder:
+                videosToPhotos = false
+            case .chooseFolder:
+                chooseFolder(for: .video)
+            }
+        }
+    }
+
+    private func chooseFolder(for kind: SaveSettings.Kind) {
+        folderPickerKind = kind
+        showingFolderPicker = true
+    }
+
+    private var audioLocation: Binding<Location> {
+        Binding {
+            audioFolderName == nil ? .squirrel : .chosenFolder
+        } set: { location in
+            switch location {
+            case .chooseFolder: chooseFolder(for: .audio)
+            case .chosenFolder: break
+            default: try? SaveSettings.setFolder(nil, for: .audio)
+            }
+        }
     }
 
     private var isBusy: Bool {

@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.natan.ytdlp.data.AutoPaste
 import com.natan.ytdlp.ui.AdvancedScreen
 import com.natan.ytdlp.ui.LoginSite
 import com.natan.ytdlp.ui.MainScreen
@@ -23,13 +24,22 @@ class MainActivity : ComponentActivity() {
     /** A link shared into the app (share sheet or squirrel://download?url=...). */
     private val sharedUrl = mutableStateOf<String?>(null)
 
+    /** A newly copied link found when the app came to the front (Settings › Pasting). */
+    private val pastedUrl = mutableStateOf<String?>(null)
+
+    /** Set on each return to the app; the clipboard can only be read once the window has focus. */
+    private var checkClipboard = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) handle(intent)
         setContent {
             SquirrelTheme {
-                SquirrelApp(sharedUrl.value) { sharedUrl.value = null }
+                SquirrelApp(
+                    sharedUrl = sharedUrl.value, onSharedUrlConsumed = { sharedUrl.value = null },
+                    pastedUrl = pastedUrl.value, onPastedUrlConsumed = { pastedUrl.value = null },
+                )
             }
         }
     }
@@ -37,6 +47,19 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handle(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkClipboard = true
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Focus also returns when a dialog or sheet closes, so only check after onResume
+        if (!hasFocus || !checkClipboard) return
+        checkClipboard = false
+        if (sharedUrl.value == null) AutoPaste.newLink(this)?.let { pastedUrl.value = it }
     }
 
     private fun handle(intent: Intent?) {
@@ -61,7 +84,12 @@ private sealed interface Screen {
 }
 
 @Composable
-private fun SquirrelApp(sharedUrl: String?, onSharedUrlConsumed: () -> Unit) {
+private fun SquirrelApp(
+    sharedUrl: String?,
+    onSharedUrlConsumed: () -> Unit,
+    pastedUrl: String?,
+    onPastedUrlConsumed: () -> Unit,
+) {
     var screen by remember { mutableStateOf<Screen>(Screen.Main) }
     val app = App.instance
 
@@ -73,6 +101,8 @@ private fun SquirrelApp(sharedUrl: String?, onSharedUrlConsumed: () -> Unit) {
         Screen.Main -> MainScreen(
             sharedUrl = sharedUrl,
             onSharedUrlConsumed = onSharedUrlConsumed,
+            pastedUrl = pastedUrl,
+            onPastedUrlConsumed = onPastedUrlConsumed,
             onOpenSettings = { screen = Screen.Settings },
         )
         Screen.Settings -> SettingsScreen(

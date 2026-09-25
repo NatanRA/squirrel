@@ -17,8 +17,9 @@ android {
         applicationId = "com.natan.ytdlp"
         minSdk = 29          // MediaStore RELATIVE_PATH (saving to Movies/ and Music/)
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        // Set by scripts/release.sh from the release tag
+        versionCode = (findProperty("appBuild") as String?)?.toInt() ?: 1
+        versionName = findProperty("appVersion") as String? ?: "1.0"
     }
 
     buildTypes {

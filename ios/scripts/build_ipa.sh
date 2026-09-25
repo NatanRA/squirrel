@@ -17,6 +17,7 @@ rm -rf "$BUILD/dd" "$BUILD/Payload" "$BUILD/YTDL.ipa"
 xcodebuild -project YTDL.xcodeproj -scheme YTDL -configuration Release \
     -destination 'generic/platform=iOS' -derivedDataPath "$BUILD/dd" \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+    ${APP_VERSION:+MARKETING_VERSION=$APP_VERSION} ${APP_BUILD:+CURRENT_PROJECT_VERSION=$APP_BUILD} \
     build -quiet
 
 APP="$BUILD/dd/Build/Products/Release-iphoneos/YTDL.app"

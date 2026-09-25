@@ -10,7 +10,8 @@ cd "$ROOT"
 [ -f local.properties ] || echo "sdk.dir=${ANDROID_HOME:-$HOME/Library/Android/sdk}" > local.properties
 [ -f app/src/main/cpp/ffmpeg/arm64-v8a/lib/libavformat.a ] || ./scripts/build_ffmpeg.sh
 
-./gradlew assembleRelease --console=plain -q
+./gradlew assembleRelease --console=plain -q \
+    ${APP_VERSION:+-PappVersion=$APP_VERSION} ${APP_BUILD:+-PappBuild=$APP_BUILD}
 
 mkdir -p build/apk
 cp app/build/outputs/apk/arm64/release/app-arm64-release.apk build/apk/yt-dlp-arm64.apk

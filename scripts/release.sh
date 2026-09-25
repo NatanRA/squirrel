@@ -9,6 +9,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/build/release"
 cd "$ROOT"
 
+# Stamp the version into both apps: 1.2.3 -> version "1.2.3", build number 10203
+export APP_VERSION="${TAG#v}"
+IFS=. read -r major minor patch <<<"$APP_VERSION"
+export APP_BUILD=$(( ${major:-0} * 10000 + ${minor:-0} * 100 + ${patch:-0} ))
+
 ./ios/scripts/build_ipa.sh
 ./android/scripts/build_apk.sh
 

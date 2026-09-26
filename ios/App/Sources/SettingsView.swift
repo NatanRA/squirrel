@@ -146,7 +146,7 @@ struct SettingsView: View {
 
     // MARK: - About
 
-    private static let sourceURL = URL(string: "https://github.com/FormulaLatest/squirrel")!
+    private static let sourceURL = URL(string: "https://github.com/NatanRA/squirrel")!
 
     private var aboutSection: some View {
         Section {

@@ -2,7 +2,7 @@
 // its download folder. Downloads run in background.js, so the popup can close.
 
 const api = globalThis.browser ?? globalThis.chrome;
-const RELEASES = 'https://github.com/FormulaLatest/squirrel/releases/latest';
+const RELEASES = 'https://github.com/NatanRA/squirrel/releases/latest';
 const $ = (id) => document.getElementById(id);
 
 let info = null;

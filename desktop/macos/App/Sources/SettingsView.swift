@@ -9,7 +9,7 @@ struct SettingsView: View {
     @Environment(UpdateManager.self) private var updates
     @Environment(DownloadStore.self) private var store
 
-    private static let sourceURL = URL(string: "https://github.com/FormulaLatest/squirrel")!
+    private static let sourceURL = URL(string: "https://github.com/NatanRA/squirrel")!
 
     var body: some View {
         @Bindable var settings = settings

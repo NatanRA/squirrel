@@ -1,7 +1,7 @@
 name: Windows installer
 
-# Builds Squirrel.msi and adds it to a release. scripts/release.sh publishes the
-# other apps from a Mac, but the MSI can only be packaged on Windows.
+# Builds Squirrel-Setup.exe and adds it to a release. scripts/release.sh publishes the
+# other apps from a Mac, but the Windows installer can only be packaged on Windows.
 on:
   release:
     types: [published]
@@ -11,7 +11,7 @@ on:
         description: Release to add the installer to, e.g. v1.6.5
         required: true
       test:
-        description: Build the chosen branch instead and keep the MSI as a workflow artifact, without touching the release
+        description: Build the chosen branch instead and keep the installer as a workflow artifact, without touching the release
         type: boolean
         default: false
 
@@ -62,38 +62,27 @@ jobs:
       - name: Build the app
         working-directory: desktop/windows
         shell: pwsh
-        # unzipWix: Compose downloads the WiX Toolset that jpackage needs for MSIs
-        run: .\gradlew.bat createDistributable unzipWix "-PappVersion=$($env:TAG.TrimStart('v'))" --no-daemon
-      - name: Package the MSI
+        run: .\gradlew.bat createDistributable "-PappVersion=$($env:TAG.TrimStart('v'))" --no-daemon
+      - name: Package the installer
         working-directory: desktop/windows
         shell: pwsh
-        # jpackage directly rather than Compose's packageMsi, which can't take packaging/main.wxs
-        # (Squirrel's artwork and stronger compression). The options match build.gradle.kts.
         run: |
-          $env:SQUIRREL_PACKAGING = (Resolve-Path packaging).Path
-          $wix = (Get-ChildItem build -Recurse -Filter candle.exe | Select-Object -First 1).DirectoryName
-          $env:PATH = "$wix;$env:PATH"
-          $version = $env:TAG.TrimStart('v')
-          & "$env:JAVA_HOME\bin\jpackage.exe" --type msi `
-            --app-image build\compose\binaries\main\app\Squirrel --dest build\msi `
-            --name Squirrel --app-version $version --vendor Squirrel `
-            --description "Download videos and audio with yt-dlp" `
-            --win-per-user-install --win-menu --win-menu-group Squirrel --win-shortcut `
-            --win-upgrade-uuid 6f1d8f0e-3f7b-4a55-9c0e-5b8f2f4e1a7d `
-            --resource-dir packaging
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
+          & $iscc "/DAppVersion=$($env:TAG.TrimStart('v'))" packaging\squirrel.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - run: cp desktop/windows/build/msi/*.msi Squirrel.msi && ls -l Squirrel.msi
+      - run: ls -l desktop/windows/build/installer/Squirrel-Setup.exe
         shell: bash
       - name: Add it to the release
         if: ${{ !inputs.test }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" Squirrel.msi --clobber
+        run: gh release upload "$TAG" desktop/windows/build/installer/Squirrel-Setup.exe --clobber
       - name: Keep it as an artifact (test build)
         if: ${{ inputs.test }}
         uses: actions/upload-artifact@v4
         with:
-          name: Squirrel-msi
-          path: Squirrel.msi
+          name: Squirrel-Setup
+          path: desktop/windows/build/installer/Squirrel-Setup.exe
           retention-days: 7

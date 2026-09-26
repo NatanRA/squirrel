@@ -16,7 +16,7 @@ links to the desktop app.
 | Merging streams | Embedded FFmpeg (remux only) | Same FFmpeg code via JNI | Same FFmpeg code as a library | Same |
 | Where files go | Photos (videos), Files › Squirrel (audio) | Movies/Squirrel (Gallery), Music/Squirrel | ~/Downloads/Squirrel (you can change it) | Same |
 | Getting links in | Paste, **share sheet**, `squirrel://` URL | Paste, **share sheet**, `squirrel://` URL | Paste, menu bar, **right-click** in browsers, **Share menu**, Services | Paste, **right-click** in browsers |
-| Package | Ad-hoc signed IPA (~25 MB) | APK per CPU type (~21 MB) | Disk image per CPU type | MSI installer |
+| Package | Ad-hoc signed IPA (~25 MB) | APK per CPU type (~21 MB) | Disk image per CPU type | Installer (Inno Setup) |
 
 None of this can go in the App Store or Google Play: both stores reject apps that download from
 YouTube. The apps are sideloaded instead, as described below.
@@ -30,7 +30,7 @@ Always the latest release:
 | **Android** 10+ | [Squirrel-arm64.apk](https://github.com/NatanRA/squirrel/releases/latest/download/Squirrel-arm64.apk) | Open it on the phone and allow installing from your browser or file manager, or run `adb install Squirrel-arm64.apk` |
 | **iOS** 18+ | [Squirrel.ipa](https://github.com/NatanRA/squirrel/releases/latest/download/Squirrel.ipa) | Sideload with AltStore, SideStore, Sideloadly or TrollStore |
 | **Mac** (Apple silicon), macOS 14+ | [Squirrel-macos-arm64.dmg](https://github.com/NatanRA/squirrel/releases/latest/download/Squirrel-macos-arm64.dmg) | Drag Squirrel to Applications. It isn't notarized, so the first time, right-click it and choose **Open** |
-| **Windows** 10/11 (x64) | [Squirrel.msi](https://github.com/NatanRA/squirrel/releases/latest/download/Squirrel.msi) | Run the installer. It installs just for you, so no admin rights are needed. SmartScreen may warn about an unknown publisher: choose **More info › Run anyway** |
+| **Windows** 10/11 (x64) | [Squirrel-Setup.exe](https://github.com/NatanRA/squirrel/releases/latest/download/Squirrel-Setup.exe) | Run the installer. It installs just for you, so no admin rights are needed. SmartScreen may warn about an unknown publisher: choose **More info › Run anyway** |
 | **Browser extension** | [Squirrel-extension.zip](https://github.com/NatanRA/squirrel/releases/latest/download/Squirrel-extension.zip) | See [extension/README.md](extension/README.md). Needs the Mac or Windows app installed |
 | Android emulator (Intel) | [Squirrel-x86_64.apk](https://github.com/NatanRA/squirrel/releases/latest/download/Squirrel-x86_64.apk) | `adb install Squirrel-x86_64.apk` |
 
@@ -147,7 +147,7 @@ Xcode, build the engine once, then run `xcodegen generate` in `desktop/macos/` a
 
 ## Build: Windows
 
-The engine is built with bash, and the installer with Gradle on Windows:
+The engine is built with bash, and the installer on Windows with Gradle and Inno Setup:
 
 ```bash
 # On Linux, macOS or WSL, with mingw-w64 installed (apt install mingw-w64 / brew install mingw-w64)
@@ -155,9 +155,11 @@ The engine is built with bash, and the installer with Gradle on Windows:
 ```
 
 ```powershell
-# On Windows, with JDK 17+ and the WiX Toolset 3 (for the MSI) installed
+# On Windows, with JDK 17+ and Inno Setup 6 installed
 cd desktop\windows
-.\gradlew packageMsi    # -> build\compose\binaries\main\msi\Squirrel-1.0.0.msi
+.\gradlew createDistributable -PappVersion=1.2.3
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=1.2.3 packaging\squirrel.iss
+# -> build\installer\Squirrel-Setup.exe
 ```
 
 `.\gradlew run` starts the app without packaging it. Pass `-PappVersion=1.2.3` to set the
@@ -172,7 +174,7 @@ Firefox, package and sign it with `web-ext`. See [extension/README.md](extension
 
 `./scripts/release.sh vX.Y.Z` runs on a Mac. It builds the iOS, Android and Mac apps, zips the
 extension, and publishes them all as a GitHub release. Publishing starts the
-[Windows installer workflow](.github/workflows/windows.yml), which builds `Squirrel.msi` on
+[Windows installer workflow](.github/workflows/windows.yml), which builds `Squirrel-Setup.exe` on
 GitHub's Windows machines and adds it to the release a few minutes later. To add it to an older
 release, run the workflow from the Actions tab with that release's tag.
 

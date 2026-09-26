@@ -20,14 +20,16 @@ import kotlin.system.exitProcess
 
 /**
  * Checks GitHub for a newer release of Squirrel itself when the app opens, and installs it:
- * the MSI is downloaded, then the app quits and the installer upgrades it in place (the
- * installer's upgradeUuid stays the same across versions). UpdateManager is separate: it
- * keeps yt-dlp up to date.
+ * the installer (packaging/squirrel.iss) is downloaded, then the app quits and the installer
+ * upgrades it in place without showing its wizard, and reopens it. Downloaded here rather than in
+ * a browser, it isn't marked as from the internet, so SmartScreen doesn't stop it. UpdateManager
+ * is separate: it keeps yt-dlp up to date.
  */
 object AppUpdater {
     data class Release(val version: String, val page: String, val installer: String?)
 
     private const val LATEST_RELEASE = "https://api.github.com/repos/NatanRA/squirrel/releases/latest"
+    private const val INSTALLER = "Squirrel-Setup.exe"
     private val prefs = Preferences.userRoot().node("app/squirrel/appUpdate")
 
     /** A newer release the user hasn't dismissed */
@@ -64,8 +66,9 @@ object AppUpdater {
         progress = 0f
         try {
             val file = withContext(Dispatchers.IO) { download(installer) }
-            // msiexec closes the running app's files, so hand over and quit
-            ProcessBuilder("msiexec", "/i", file.absolutePath).start()
+            // The installer replaces the running app's files, so hand over and quit. /SILENT shows
+            // just its progress; it reopens Squirrel when it's done.
+            ProcessBuilder(file.absolutePath, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS").start()
             exitProcess(0)
         } catch (e: Exception) {
             error = "Couldn't download the update: ${e.message ?: e}"
@@ -83,7 +86,7 @@ object AppUpdater {
         connection.setRequestProperty("Accept", "application/vnd.github+json")
         val json = connection.inputStream.bufferedReader().use { Json.parseToJsonElement(it.readText()) as JsonObject }
         val installer = json["assets"]?.jsonArray?.map { it.jsonObject }
-            ?.firstOrNull { it["name"]?.jsonPrimitive?.content == "Squirrel.msi" }
+            ?.firstOrNull { it["name"]?.jsonPrimitive?.content == INSTALLER }
             ?.get("browser_download_url")?.jsonPrimitive?.content
         return Release(
             json.getValue("tag_name").jsonPrimitive.content.removePrefix("v"),
@@ -93,7 +96,7 @@ object AppUpdater {
     }
 
     private fun download(url: String): File {
-        val file = File(System.getProperty("java.io.tmpdir"), "Squirrel-update.msi")
+        val file = File(System.getProperty("java.io.tmpdir"), INSTALLER)
         val connection = URL(url).openConnection() as HttpURLConnection  // follows GitHub's redirect to the file
         val total = connection.contentLengthLong
         connection.inputStream.use { input ->

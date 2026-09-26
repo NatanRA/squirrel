@@ -7,7 +7,7 @@ plugins {
     id("org.jetbrains.compose") version "1.12.1"
 }
 
-// Set by scripts/release.sh from the release tag; MSI versions need three numbers
+// Set from the release tag by .github/workflows/windows.yml (three numbers)
 val appVersion = (findProperty("appVersion") as String?) ?: "1.0.0"
 
 dependencies {
@@ -56,8 +56,8 @@ compose.desktop {
             vendor = "Squirrel"
             appResourcesRootDir.set(layout.buildDirectory.dir("app-resources"))
             modules("java.naming", "jdk.unsupported")
-            // The MSI itself is packaged by .github/workflows/windows.yml, with these same options
-            // plus packaging/ (installer artwork); packageMsi still works for local builds
+            // Releases package createDistributable's app with Inno Setup instead (packaging/squirrel.iss,
+            // run by .github/workflows/windows.yml); packageMsi still works for a quick local installer
             windows {
                 iconFile.set(project.file("icon.ico"))
                 menu = true

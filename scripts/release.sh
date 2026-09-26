@@ -2,8 +2,8 @@
 # Build the apps and publish them as a GitHub release (run on a Mac):
 #   ./scripts/release.sh v1.1.0
 # The Windows installer can only be packaged on Windows: publishing the release starts
-# .github/workflows/windows.yml, which builds Squirrel.msi and adds it a few minutes later.
-# To attach one built yourself instead: WINDOWS_MSI=path/to/Squirrel.msi ./scripts/release.sh v1.1.0
+# .github/workflows/windows.yml, which builds Squirrel-Setup.exe and adds it a few minutes later.
+# To attach one built yourself instead: WINDOWS_INSTALLER=path/to/Squirrel-Setup.exe ./scripts/release.sh v1.1.0
 # The README's download links point at releases/latest, so they follow automatically.
 set -euo pipefail
 
@@ -26,8 +26,8 @@ cp ios/build/Squirrel.ipa "$OUT/Squirrel.ipa"
 cp android/build/apk/Squirrel-arm64.apk "$OUT/Squirrel-arm64.apk"
 cp android/build/apk/Squirrel-x86_64.apk "$OUT/Squirrel-x86_64.apk"
 cp "desktop/build/Squirrel-macos-$(uname -m).dmg" "$OUT/"
-if [ -n "${WINDOWS_MSI:-}" ]; then
-    cp "$WINDOWS_MSI" "$OUT/Squirrel.msi"
+if [ -n "${WINDOWS_INSTALLER:-}" ]; then
+    cp "$WINDOWS_INSTALLER" "$OUT/Squirrel-Setup.exe"
 else
     echo "The Windows installer is added by GitHub Actions (.github/workflows/windows.yml)"
 fi

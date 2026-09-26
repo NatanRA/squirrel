@@ -87,6 +87,10 @@ folder. The browser extension talks to that same engine through
 Each desktop app registers the engine with installed browsers every time it starts, so the app
 doesn't have to be open for the extension to work.
 
+Squirrel checks this repo's latest release each time it opens and offers anything newer.
+On Android and Windows, **Update** downloads it and hands it to the system installer. On a Mac
+it downloads the disk image, and on iOS it opens the release page for your sideloading app.
+
 yt-dlp updates itself: once a day each app checks PyPI, downloads and checksum-verifies any newer
 release into app storage, and uses it from the next launch (on desktop, as soon as the engine
 restarts). yt-dlp is pure Python, so this needs no rebuild. The built-in copy stays as a fallback

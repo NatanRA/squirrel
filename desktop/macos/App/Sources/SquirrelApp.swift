@@ -4,6 +4,7 @@ import SwiftUI
 struct SquirrelApp: App {
     @State private var store = DownloadStore()
     @State private var updates = UpdateManager()
+    @State private var appUpdates = AppUpdateChecker()
     @State private var settings = AppSettings()
     @State private var browsers: [String] = []
     @State private var showingSplash = true
@@ -16,6 +17,8 @@ struct SquirrelApp: App {
                     .environment(store)
                     .environment(updates)
                     .environment(settings)
+                    .environment(appUpdates)
+                    .task { await appUpdates.check() }
                     .task {
                         browsers = NativeMessaging.register()
                         await store.start()

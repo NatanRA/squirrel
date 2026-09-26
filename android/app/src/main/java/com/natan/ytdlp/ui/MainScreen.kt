@@ -52,6 +52,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -183,6 +184,7 @@ fun MainScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            item { UpdateBanner() }
             item {
                 OutlinedTextField(
                     value = url,
@@ -281,6 +283,36 @@ fun MainScreen(
             title = { Text(title) },
             text = { Text(message) },
         )
+    }
+}
+
+/** A newer Squirrel is on GitHub: Update downloads it and opens Android's installer. */
+@Composable
+private fun UpdateBanner() {
+    val updater = App.instance.appUpdater
+    val release by updater.available.collectAsStateWithLifecycle()
+    val progress by updater.progress.collectAsStateWithLifecycle()
+    val error by updater.error.collectAsStateWithLifecycle()
+    val current = release ?: return
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp)) {
+            Text("Squirrel ${current.version} is available", style = MaterialTheme.typography.titleSmall)
+            Text(
+                error ?: "You have ${updater.currentVersion}.",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                val downloading = progress
+                if (downloading != null) {
+                    LinearProgressIndicator(progress = { downloading }, Modifier.weight(1f).padding(end = 16.dp))
+                    Text("Downloading…", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(end = 8.dp))
+                } else {
+                    TextButton(onClick = updater::dismiss) { Text("Not Now") }
+                    Button(onClick = updater::install) { Text("Update") }
+                }
+            }
+        }
     }
 }
 

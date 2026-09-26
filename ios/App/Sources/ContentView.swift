@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(DownloadStore.self) private var store
+    @Environment(AppUpdateChecker.self) private var appUpdates
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingSettings = false
     @AppStorage(SaveSettings.videosToPhotosKey) private var videosToPhotos = true
@@ -19,6 +20,9 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             List {
+                if let release = appUpdates.available {
+                    updateBanner(release)
+                }
                 Section {
                     inputRow
                     Button(action: fetch) {
@@ -96,6 +100,34 @@ struct ContentView: View {
             .onOpenURL(perform: handleOpenURL)
             .onChange(of: scenePhase, initial: true) { _, phase in
                 if phase == .active { autoPaste() }
+            }
+        }
+    }
+
+    /// A newer Squirrel is out. Sideloaded apps can't replace themselves, so Update opens the
+    /// release page for AltStore, Sideloadly and the like.
+    private func updateBanner(_ release: AppUpdateChecker.Release) -> some View {
+        Section {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.down.app.fill")
+                    .font(.title2)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Squirrel \(release.version) is available")
+                        .font(.subheadline.weight(.semibold))
+                    Text("You have \(AppUpdateChecker.currentVersion).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Link("Update", destination: release.page)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                Button { appUpdates.dismiss() } label: {
+                    Image(systemName: "xmark").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Not Now")
             }
         }
     }

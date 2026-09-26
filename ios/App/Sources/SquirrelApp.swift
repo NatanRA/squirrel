@@ -4,6 +4,7 @@ import SwiftUI
 struct SquirrelApp: App {
     @State private var store = DownloadStore()
     @State private var updates = UpdateManager()
+    @State private var appUpdates = AppUpdateChecker()
     @State private var cookies = CookieStore()
     @State private var showingSplash = true
     @Environment(\.scenePhase) private var scenePhase
@@ -15,6 +16,8 @@ struct SquirrelApp: App {
                     .environment(store)
                     .environment(updates)
                     .environment(cookies)
+                    .environment(appUpdates)
+                    .task { await appUpdates.check() }
                     .task {
                         await store.startPython()
                         await updates.refreshStatus()

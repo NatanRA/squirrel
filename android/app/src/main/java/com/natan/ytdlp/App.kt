@@ -1,6 +1,7 @@
 package com.natan.ytdlp
 
 import android.app.Application
+import com.natan.ytdlp.data.AppUpdater
 import com.natan.ytdlp.data.CookieStore
 import com.natan.ytdlp.data.DownloadRepository
 import com.natan.ytdlp.data.UpdateManager
@@ -17,6 +18,7 @@ class App : Application() {
     lateinit var repository: DownloadRepository
     lateinit var updates: UpdateManager
     lateinit var cookies: CookieStore
+    lateinit var appUpdater: AppUpdater
 
     override fun onCreate() {
         super.onCreate()
@@ -25,6 +27,7 @@ class App : Application() {
         cookies = CookieStore(this)
         repository = DownloadRepository(this, scope)
         updates = UpdateManager(this, scope)
+        appUpdater = AppUpdater(this, scope).also { it.check() }
         scope.launch {
             updates.refreshStatus()
             updates.autoUpdateIfDue()

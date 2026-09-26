@@ -43,6 +43,7 @@ fun main() {
             var settings by remember { mutableStateOf(false) }
             LaunchedEffect(Unit) {
                 DownloadStore.start()
+                AppUpdater.check()
                 UpdateManager.refreshStatus()
                 UpdateManager.autoUpdateIfDue()
             }

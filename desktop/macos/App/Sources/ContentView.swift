@@ -4,6 +4,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(DownloadStore.self) private var store
     @Environment(AppSettings.self) private var settings
+    @Environment(AppUpdateChecker.self) private var appUpdates
     @State private var urlText = ""
     @State private var isFetching = false
     @State private var info: VideoInfo?
@@ -30,6 +31,10 @@ struct ContentView: View {
                 .disabled(isFetching || trimmedURL.isEmpty)
             }
             .padding(12)
+
+            if let release = appUpdates.available {
+                updateBanner(release)
+            }
 
             Divider()
 
@@ -67,6 +72,23 @@ struct ContentView: View {
         }
         .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
         .onOpenURL(perform: handleOpenURL)
+    }
+
+    /// A newer Squirrel is out: Download fetches its disk image in the browser.
+    private func updateBanner(_ release: AppUpdateChecker.Release) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.app.fill")
+                .font(.title3)
+                .foregroundStyle(.tint)
+            Text("Squirrel \(release.version) is available.").fontWeight(.medium)
+            Text("You have \(AppUpdateChecker.currentVersion).").foregroundStyle(.secondary)
+            Spacer()
+            Button("Not Now") { appUpdates.dismiss() }
+            Button("Download") { NSWorkspace.shared.open(release.download ?? release.page) }
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 10)
     }
 
     private var footer: some View {

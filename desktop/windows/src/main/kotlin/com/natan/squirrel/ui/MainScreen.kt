@@ -39,6 +39,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -65,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.natan.squirrel.AppSettings
+import com.natan.squirrel.AppUpdater
 import com.natan.squirrel.DownloadItem
 import com.natan.squirrel.DownloadState
 import com.natan.squirrel.DownloadStore
@@ -115,6 +117,7 @@ fun MainScreen(onOpenSettings: () -> Unit) {
         )
     }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            UpdateBanner()
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -210,6 +213,37 @@ fun MainScreen(onOpenSettings: () -> Unit) {
 }
 
 @OptIn(ExperimentalFoundationApi::class)
+
+/** A newer Squirrel is on GitHub: Update downloads its installer, which replaces this version. */
+@Composable
+private fun UpdateBanner() {
+    val release = AppUpdater.available ?: return
+    val scope = rememberCoroutineScope()
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Squirrel ${release.version} is available", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    AppUpdater.error ?: "You have ${AppUpdater.currentVersion}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (AppUpdater.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+            val progress = AppUpdater.progress
+            if (progress != null) {
+                LinearProgressIndicator(progress = { progress }, Modifier.width(160.dp).padding(end = 12.dp))
+            } else {
+                TextButton(onClick = AppUpdater::dismiss) { Text("Not Now") }
+                Button(onClick = { scope.launch { AppUpdater.install() } }) { Text("Update") }
+            }
+        }
+    }
+}
+
 @Composable
 private fun DownloadRow(item: DownloadItem, live: LiveProgress?, onAlert: (Pair<String, String>) -> Unit, copy: () -> Unit) {
     val store = DownloadStore

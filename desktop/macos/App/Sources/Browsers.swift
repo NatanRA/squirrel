@@ -4,9 +4,10 @@ import SwiftUI
 
 /// A browser on this Mac and whether Squirrel's extension is in it (Settings › Browsers).
 struct BrowserStatus: Identifiable {
-    enum Kind {
-        /// Chrome, Brave, Edge, Arc and Vivaldi share Chrome's extension system
+    enum Kind: Equatable {
+        /// Chrome, Brave, Edge, Opera, Arc, Vivaldi and others built on Chromium share Chrome's extensions
         case chromium(extensionsPage: String)
+        /// Firefox, and browsers built on it like Zen
         case firefox
         case safari
     }
@@ -15,8 +16,10 @@ struct BrowserStatus: Identifiable {
     let name: String
     let kind: Kind
     let appURL: URL
+    /// Its folder in ~/Library/Application Support, with its profiles
+    let dataFolder: URL?
     /// Installed in at least one profile (enabled, for Safari)
-    var extensionInstalled: Bool
+    var extensionInstalled = false
 }
 
 enum Browsers {
@@ -26,17 +29,52 @@ enum Browsers {
     /// app update brings the extension's changes too.
     static let extensionFolder = AppPaths.support.appendingPathComponent("Browser Extension", isDirectory: true)
 
-    private static let known: [(id: String, name: String, kind: BrowserStatus.Kind, data: String?)] = [
-        ("com.brave.Browser", "Brave", .chromium(extensionsPage: "brave://extensions"), "BraveSoftware/Brave-Browser"),
-        ("com.google.Chrome", "Google Chrome", .chromium(extensionsPage: "chrome://extensions"), "Google/Chrome"),
-        ("com.microsoft.edgemac", "Microsoft Edge", .chromium(extensionsPage: "edge://extensions"), "Microsoft Edge"),
-        ("company.thebrowser.Browser", "Arc", .chromium(extensionsPage: "chrome://extensions"), "Arc/User Data"),
-        ("com.vivaldi.Vivaldi", "Vivaldi", .chromium(extensionsPage: "vivaldi://extensions"), "Vivaldi"),
-        ("org.mozilla.firefox", "Firefox", .firefox, "Firefox"),
-        ("com.apple.Safari", "Safari", .safari, nil),
-    ]
+    static let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
 
-    private static let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    private struct Known {
+        let name: String
+        let kind: BrowserStatus.Kind
+        /// In Application Support; nil when `dataFolder(…)` finds it
+        var data: String?
+    }
+
+    private static let chrome = BrowserStatus.Kind.chromium(extensionsPage: "chrome://extensions")
+    private static let opera = BrowserStatus.Kind.chromium(extensionsPage: "opera://extensions")
+    private static let edge = BrowserStatus.Kind.chromium(extensionsPage: "edge://extensions")
+    private static let brave = BrowserStatus.Kind.chromium(extensionsPage: "brave://extensions")
+    private static let vivaldi = BrowserStatus.Kind.chromium(extensionsPage: "vivaldi://extensions")
+
+    /// Browsers with their proper names, extension pages and folders. Others built on Chromium or
+    /// Firefox are recognized anyway (see `engine(of:)`).
+    private static let known: [String: Known] = [
+        "com.google.Chrome": Known(name: "Google Chrome", kind: chrome, data: "Google/Chrome"),
+        "com.google.Chrome.beta": Known(name: "Google Chrome Beta", kind: chrome, data: "Google/Chrome Beta"),
+        "com.google.Chrome.dev": Known(name: "Google Chrome Dev", kind: chrome, data: "Google/Chrome Dev"),
+        "com.google.Chrome.canary": Known(name: "Google Chrome Canary", kind: chrome, data: "Google/Chrome Canary"),
+        "org.chromium.Chromium": Known(name: "Chromium", kind: chrome, data: "Chromium"),
+        "com.brave.Browser": Known(name: "Brave", kind: brave, data: "BraveSoftware/Brave-Browser"),
+        "com.brave.Browser.beta": Known(name: "Brave Beta", kind: brave, data: "BraveSoftware/Brave-Browser-Beta"),
+        "com.brave.Browser.nightly": Known(name: "Brave Nightly", kind: brave, data: "BraveSoftware/Brave-Browser-Nightly"),
+        "com.microsoft.edgemac": Known(name: "Microsoft Edge", kind: edge, data: "Microsoft Edge"),
+        "com.microsoft.edgemac.Beta": Known(name: "Microsoft Edge Beta", kind: edge, data: "Microsoft Edge Beta"),
+        "com.microsoft.edgemac.Dev": Known(name: "Microsoft Edge Dev", kind: edge, data: "Microsoft Edge Dev"),
+        "com.microsoft.edgemac.Canary": Known(name: "Microsoft Edge Canary", kind: edge, data: "Microsoft Edge Canary"),
+        "com.operasoftware.Opera": Known(name: "Opera", kind: opera, data: "com.operasoftware.Opera"),
+        "com.operasoftware.OperaGX": Known(name: "Opera GX", kind: opera, data: "com.operasoftware.OperaGX"),
+        "com.operasoftware.OperaAir": Known(name: "Opera Air", kind: opera, data: "com.operasoftware.OperaAir"),
+        "com.vivaldi.Vivaldi": Known(name: "Vivaldi", kind: vivaldi, data: "Vivaldi"),
+        "com.vivaldi.Vivaldi.snapshot": Known(name: "Vivaldi Snapshot", kind: vivaldi, data: "Vivaldi Snapshot"),
+        "company.thebrowser.Browser": Known(name: "Arc", kind: chrome, data: "Arc/User Data"),
+        "company.thebrowser.dia": Known(name: "Dia", kind: chrome),
+        "ai.perplexity.comet": Known(name: "Comet", kind: chrome),
+        "net.imput.helium": Known(name: "Helium", kind: chrome),
+        "ru.yandex.desktop.yandex-browser": Known(name: "Yandex Browser", kind: .chromium(extensionsPage: "browser://extensions"), data: "Yandex/YandexBrowser"),
+        "org.mozilla.firefox": Known(name: "Firefox", kind: .firefox, data: "Firefox"),
+        "org.mozilla.firefoxdeveloperedition": Known(name: "Firefox Developer Edition", kind: .firefox, data: "Firefox"),
+        "org.mozilla.nightly": Known(name: "Firefox Nightly", kind: .firefox, data: "Firefox"),
+        "app.zen-browser.zen": Known(name: "Zen", kind: .firefox),
+        "com.apple.Safari": Known(name: "Safari", kind: .safari),
+    ]
 
     /// Browsers and Safari keep using wherever the app ran from, so it has to stay put: not the
     /// disk image, and not Downloads (where macOS runs a temporary copy).
@@ -45,38 +83,100 @@ enum Browsers {
         return path.hasPrefix("/Applications/") || path.hasPrefix(NSHomeDirectory() + "/Applications/")
     }
 
+    /// Every browser on this Mac that Squirrel's extension runs in: the apps macOS offers for web
+    /// links plus the known ones, told apart by what they're built on.
+    static func onThisMac() -> [BrowserStatus] {
+        let workspace = NSWorkspace.shared
+        let candidates = workspace.urlsForApplications(toOpen: URL(string: "https://example.com")!)
+            + known.keys.compactMap { workspace.urlForApplication(withBundleIdentifier: $0) }
+        var seen = Set<String>()
+        var browsers: [BrowserStatus] = []
+        for appURL in candidates {
+            guard let bundle = Bundle(url: appURL), let id = bundle.bundleIdentifier, !seen.contains(id),
+                  let kind = known[id]?.kind ?? engine(of: bundle) else { continue }
+            seen.insert(id)
+            let name = known[id]?.name ?? appURL.deletingPathExtension().lastPathComponent
+            browsers.append(BrowserStatus(id: id, name: name, kind: kind, appURL: appURL,
+                                          dataFolder: dataFolder(id: id, name: name, kind: kind)))
+        }
+        return browsers.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// A browser not in `known`, by what it's built on. Apps that only open links (Electron apps,
+    /// link pickers) and browsers on other engines are left out.
+    private static func engine(of bundle: Bundle) -> BrowserStatus.Kind? {
+        let fileManager = FileManager.default
+        let contents = bundle.bundleURL.appendingPathComponent("Contents")
+        guard opensWebPages(bundle),
+              !fileManager.fileExists(atPath: contents.appendingPathComponent("Resources/app.asar").path) else { return nil }
+        if fileManager.fileExists(atPath: contents.appendingPathComponent("MacOS/XUL").path) {
+            return .firefox
+        }
+        let frameworks = (try? fileManager.contentsOfDirectory(atPath: contents.appendingPathComponent("Frameworks").path)) ?? []
+        if frameworks.contains(where: { $0.hasSuffix(" Framework.framework") && $0 != "Electron Framework.framework" }) {
+            return chrome
+        }
+        return nil
+    }
+
+    /// Browsers say they open HTML files; apps that just handle web links don't.
+    private static func opensWebPages(_ bundle: Bundle) -> Bool {
+        let types = bundle.object(forInfoDictionaryKey: "CFBundleDocumentTypes") as? [[String: Any]] ?? []
+        return types.contains { type in
+            (type["LSItemContentTypes"] as? [String] ?? []).contains("public.html")
+                || (type["CFBundleTypeExtensions"] as? [String] ?? []).contains("html")
+        }
+    }
+
+    /// A browser's folder in Application Support. Chromium browsers keep a "Local State" file there
+    /// and Firefox ones a "profiles.ini", which finds the folder of browsers not in `known`.
+    private static func dataFolder(id: String, name: String, kind: BrowserStatus.Kind) -> URL? {
+        let marker: String
+        switch kind {
+        case .chromium: marker = "Local State"
+        case .firefox: marker = "profiles.ini"
+        case .safari: return nil
+        }
+        let listed = known[id]?.data.map { support.appendingPathComponent($0, isDirectory: true) }
+        let guesses = [id, name, "\(name)/User Data", name.lowercased()].map { support.appendingPathComponent($0, isDirectory: true) }
+        return ([listed].compactMap { $0 } + guesses)
+            .first { FileManager.default.fileExists(atPath: $0.appendingPathComponent(marker).path) }
+            ?? listed
+    }
+
+    /// The browsers on this Mac, with whether each has Squirrel's extension.
     static func installed() async -> [BrowserStatus] {
-        var result: [BrowserStatus] = []
-        for browser in known {
-            guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser.id) else { continue }
-            let installed: Bool
+        var browsers = onThisMac()
+        for index in browsers.indices {
+            let browser = browsers[index]
             switch browser.kind {
             case .chromium:
-                installed = chromiumHasExtension(dataFolder: browser.data!)
+                browsers[index].extensionInstalled = browser.dataFolder.map(chromiumHasExtension) ?? false
             case .firefox:
-                installed = firefoxHasExtension()
+                browsers[index].extensionInstalled = browser.dataFolder.map(firefoxHasExtension) ?? false
             case .safari:
-                installed = (try? await SFSafariExtensionManager.stateOfSafariExtension(withIdentifier: safariExtensionID))?.isEnabled ?? false
+                browsers[index].extensionInstalled = (try? await SFSafariExtensionManager
+                    .stateOfSafariExtension(withIdentifier: safariExtensionID))?.isEnabled ?? false
             }
-            result.append(BrowserStatus(id: browser.id, name: browser.name, kind: browser.kind, appURL: appURL, extensionInstalled: installed))
         }
-        return result
+        return browsers
     }
 
-    /// Chromium records its extensions in each profile's Preferences files.
-    private static func chromiumHasExtension(dataFolder: String) -> Bool {
-        let root = support.appendingPathComponent(dataFolder, isDirectory: true)
-        let profiles = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+    /// Chromium records its extensions in each profile's Preferences files. Profiles are "Default"
+    /// and "Profile 2" and so on; Opera keeps its first one in the folder itself.
+    private static func chromiumHasExtension(_ root: URL) -> Bool {
+        let folders = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        let profiles = [root] + folders.filter { $0 == "Default" || $0.hasPrefix("Profile ") }.map { root.appendingPathComponent($0) }
         let id = Data(NativeMessaging.chromeExtensionIDs[0].utf8)
-        return profiles.filter { $0 == "Default" || $0.hasPrefix("Profile ") }.contains { profile in
+        return profiles.contains { profile in
             ["Secure Preferences", "Preferences"].contains { file in
-                (try? Data(contentsOf: root.appendingPathComponent(profile).appendingPathComponent(file)))?.range(of: id) != nil
+                (try? Data(contentsOf: profile.appendingPathComponent(file)))?.range(of: id) != nil
             }
         }
     }
 
-    private static func firefoxHasExtension() -> Bool {
-        let profiles = support.appendingPathComponent("Firefox/Profiles", isDirectory: true)
+    private static func firefoxHasExtension(_ root: URL) -> Bool {
+        let profiles = root.appendingPathComponent("Profiles", isDirectory: true)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: profiles.path)) ?? []
         let id = Data(NativeMessaging.firefoxExtensionID.utf8)
         return names.contains { name in
@@ -135,7 +235,7 @@ struct BrowserSettings: View {
                         Text(browser.name)
                         Spacer()
                         if browser.extensionInstalled {
-                            Label(browser.id == "com.apple.Safari" ? "Turned on" : "Installed", systemImage: "checkmark.circle.fill")
+                            Label(browser.kind == .safari ? "Turned on" : "Installed", systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
                                 .font(.callout)
                         }
@@ -184,10 +284,10 @@ struct BrowserSettings: View {
             if browser.extensionInstalled {
                 Text("Right-click any video or link › Download with Squirrel.").foregroundStyle(.secondary)
             } else {
-                Text("Firefox only keeps add-ons that Mozilla has signed, which Squirrel's isn't yet. To use it until Firefox quits:")
+                Text("\(browser.name) only keeps add-ons that Mozilla has signed, which Squirrel's isn't yet. To use it until \(browser.name) quits:")
                     .foregroundStyle(.secondary)
                 steps([
-                    "Open **about:debugging** and choose **This Firefox**.",
+                    "Open **about:debugging** and choose **This \(browser.name)** (or This Firefox).",
                     "Click **Load Temporary Add-on** and choose **manifest.json** in the Squirrel extension folder.",
                 ])
             }
@@ -195,7 +295,7 @@ struct BrowserSettings: View {
                 Button("Copy about:debugging") { copy("about:debugging#/runtime/this-firefox", for: browser) }
                 Button("Show Extension Folder") { NSWorkspace.shared.activateFileViewerSelecting([Browsers.extensionFolder]) }
                 if copied == browser.id {
-                    Text("Copied: paste it into Firefox's address bar.").font(.caption).foregroundStyle(.secondary)
+                    Text("Copied: paste it into \(browser.name)'s address bar.").font(.caption).foregroundStyle(.secondary)
                 }
             }
         case .safari:

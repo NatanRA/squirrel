@@ -53,7 +53,7 @@ desktop/
   scripts/           Builds that engine (Python + yt-dlp + Remux.c) for each platform
   macos/             Mac app (SwiftUI, XcodeGen)
   windows/           Windows app (Compose Desktop, Gradle)
-extension/         Chrome/Edge/Brave/Firefox extension (Manifest V3)
+extension/         Chrome/Edge/Brave/Opera/Firefox extension (Manifest V3)
 branding/          Icon sources and colours
 ```
 
@@ -165,7 +165,7 @@ installer version.
 
 ## Build: browser extension
 
-The extension needs no build step. For Chrome, Edge and Brave, load `extension/` unpacked. For
+The extension needs no build step. For Chrome, Edge, Brave, Opera and other Chromium browsers, load `extension/` unpacked. For
 Firefox, package and sign it with `web-ext`. See [extension/README.md](extension/README.md).
 
 ## Releasing
@@ -194,8 +194,9 @@ WINDOWS_MSI=/path/to/Squirrel-1.2.3.msi ./scripts/release.sh v1.2.3
 - **Browsers (computers):** right-click any video, link or page and choose **Download with
   Squirrel**, or click the Squirrel button in the toolbar. The popup shows the formats, and the file
   is saved to the desktop app's download folder; downloads keep going after it closes. Set it up
-  from the Mac app's **Settings › Browsers** (Brave, Chrome, Edge, Arc, Vivaldi, Firefox and
-  Safari), or see [extension/README.md](extension/README.md).
+  from the Mac app's **Settings › Browsers**, which finds the browsers on your Mac (Chrome, Brave,
+  Edge, Opera, Arc, Vivaldi and others built on Chromium; Firefox, Zen and others built on Firefox;
+  and Safari), or see [extension/README.md](extension/README.md).
 - **Mac:** a squirrel in the menu bar downloads a copied link and shows progress without opening the
   window, a notification says when each download finishes (click it to show the file), and the Dock
   icon shows progress. In any app, select text with a link, then right-click › **Services** ›

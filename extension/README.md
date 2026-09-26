@@ -1,6 +1,6 @@
 # Squirrel browser extension
 
-For Chrome, Edge, Brave, Arc, Vivaldi and Firefox: right-click any video, link or page and choose
+For Chrome, Edge, Brave, Opera, Arc, Vivaldi, other Chromium browsers, and Firefox and browsers built on it: right-click any video, link or page and choose
 **Download with Squirrel**, or click the toolbar button. The popup opens with that link's formats
 (or the page you're on); pick one and the file is saved to the Squirrel desktop app's download
 folder. A notification says when it's done.
@@ -18,7 +18,8 @@ extension to load in `~/Library/Application Support/Squirrel/Browser Extension`.
 
 The Chrome Web Store and Firefox Add-ons don't list YouTube downloaders, so install it yourself:
 
-**Chrome, Edge, Brave:** open `chrome://extensions` (or `edge://extensions`), turn on
+**Chrome, Edge, Brave, Opera and other Chromium browsers:** open `chrome://extensions` (or
+`edge://extensions`, `opera://extensions`), turn on
 **Developer mode**, click **Load unpacked**, and choose this `extension` folder (unzip
 `Squirrel-extension.zip` from the releases page first). The key in `manifest.json` gives it the
 fixed ID `hdacmehgeiecekdneiggfemjeolmdfbc`, which the desktop apps allow.

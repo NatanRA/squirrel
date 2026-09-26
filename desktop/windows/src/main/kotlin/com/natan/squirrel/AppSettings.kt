@@ -33,8 +33,8 @@ object AppSettings {
         save()
     }
 
-    fun setDownloadFolder(folder: File) { downloadFolder = folder; save() }
-    fun setCookieBrowser(browser: CookieBrowser) { cookieBrowser = browser; save() }
+    fun updateDownloadFolder(folder: File) { downloadFolder = folder; save() }
+    fun updateCookieBrowser(browser: CookieBrowser) { cookieBrowser = browser; save() }
 
     private fun save() {
         // Windows 11 ships AV1 and VP9 support, so those count as playable there

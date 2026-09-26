@@ -10,7 +10,7 @@ import androidx.compose.ui.graphics.Color
 /** Colour for formats the device's own players can't play (matches iOS's orange). */
 val WarningColor = Color(0xFFE8710A)
 
-// Material 3 "fidelity" schemes generated from Squirrel's acorn colour #B8532A
+// Material 3 "fidelity" schemes generated from Squirrel's brand colour #B8532A
 // (see branding/README.md); the same as the Android app.
 private val LightColors = lightColorScheme(
     primary = Color(0xFF983C14),

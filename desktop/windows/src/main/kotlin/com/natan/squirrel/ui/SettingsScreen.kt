@@ -67,7 +67,7 @@ fun SettingsScreen(appVersion: String, onBack: () -> Unit) {
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState())) {
             Header("Downloads")
             ListItem(
-                modifier = Modifier.clickable { chooseFolder(AppSettings.downloadFolder)?.let(AppSettings::setDownloadFolder) },
+                modifier = Modifier.clickable { chooseFolder(AppSettings.downloadFolder)?.let(AppSettings::updateDownloadFolder) },
                 headlineContent = { Text("Save to") },
                 supportingContent = { Text(AppSettings.downloadFolder.path) },
                 trailingContent = { Text("Change…", color = MaterialTheme.colorScheme.primary) },
@@ -86,7 +86,7 @@ fun SettingsScreen(appVersion: String, onBack: () -> Unit) {
                     CookieBrowser.entries.forEach { browser ->
                         DropdownMenuItem(
                             text = { Text(browser.label) },
-                            onClick = { browserMenu = false; AppSettings.setCookieBrowser(browser) },
+                            onClick = { browserMenu = false; AppSettings.updateCookieBrowser(browser) },
                         )
                     }
                 }

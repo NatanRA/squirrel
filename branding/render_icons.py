@@ -78,6 +78,34 @@ with open(os.path.join(REPO, *menu_dir, 'Contents.json'), 'w') as f:
         f'{{"filename":"menubar@{s}x.png","idiom":"universal","scale":"{s}x"}}' for s in (1, 2, 3))
         + '],"info":{"author":"xcode","version":1},"properties":{"template-rendering-intent":"template"}}\n')
 
+# Windows installer artwork (WiX's WixUIDialogBmp and WixUIBannerBmp; see desktop/windows/packaging).
+# The installer draws its text over the white parts, so the squirrel stays on the left panel and
+# the banner's right end.
+MARK = open(os.path.join(HERE, 'mark.svg')).read().split('>', 1)[1].rsplit('</svg>', 1)[0]
+GRADIENT = ('<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">'
+            '<stop offset="0" stop-color="#FFF7F0"/><stop offset="1" stop-color="#F7DCC8"/></linearGradient>')
+
+
+def bitmap(svg, width, height):
+    return Image.open(io.BytesIO(cairosvg.svg2png(bytestring=svg.encode(), output_width=width,
+                                                  output_height=height))).convert('RGB')
+
+
+dialog = (f'<svg xmlns="http://www.w3.org/2000/svg" width="493" height="312" viewBox="0 0 493 312">'
+          f'<defs>{GRADIENT}</defs><rect width="493" height="312" fill="#FFFFFF"/>'
+          f'<rect width="164" height="312" fill="url(#bg)"/><rect x="163" width="1" height="312" fill="#E4C4AE"/>'
+          f'<g transform="translate(22 66) scale(0.5)">{MARK}</g>'
+          f'<text x="82" y="222" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" '
+          f'font-size="22" font-weight="700" fill="#A8461F">Squirrel</text></svg>')
+banner = (f'<svg xmlns="http://www.w3.org/2000/svg" width="493" height="58" viewBox="0 0 493 58">'
+          f'<defs>{GRADIENT}</defs><rect width="493" height="58" fill="#FFFFFF"/>'
+          f'<rect x="435" width="58" height="58" fill="url(#bg)"/><rect x="435" width="1" height="58" fill="#E4C4AE"/>'
+          f'<g transform="translate(439 4) scale(0.2083)">{MARK}</g></svg>')
+packaging = os.path.join(REPO, 'desktop', 'windows', 'packaging')
+os.makedirs(packaging, exist_ok=True)
+bitmap(dialog, 493, 312).save(os.path.join(packaging, 'dialog.bmp'))
+bitmap(banner, 493, 58).save(os.path.join(packaging, 'banner.bmp'))
+
 # Sanity check that Android's copy of the mark still matches
 android = open(os.path.join(REPO, 'android', 'app', 'src', 'main', 'res', 'drawable', 'ic_launcher_foreground.xml')).read()
 for d in re.findall(r' d="([^"]+)"', open(os.path.join(HERE, 'mark.svg')).read()):

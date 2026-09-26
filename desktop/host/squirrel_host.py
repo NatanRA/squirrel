@@ -77,17 +77,14 @@ def load_settings():
     return settings
 
 
-def _deno_path():
-    name = 'deno.exe' if sys.platform == 'win32' else 'deno'
+def _quickjs_path():
+    """QuickJS-ng, bundled for YouTube's JS challenges where there's no JavaScriptCore (build_runtime.sh)."""
+    name = 'qjs.exe' if sys.platform == 'win32' else 'qjs'
     for folder in (os.path.join(RUNTIME, 'lib', 'bin'), os.path.join(RUNTIME, 'bin')):
         path = os.path.join(folder, name)
         if os.path.isfile(path):
             return path
-    try:
-        import deno
-        return deno.find_deno_bin()
-    except Exception:
-        return None
+    return None
 
 
 def _configure():
@@ -102,9 +99,9 @@ def _configure():
         'verbose': bool(os.environ.get('SQUIRREL_VERBOSE')),
     }
     if not _has_js_host():
-        deno = _deno_path()
-        if deno:
-            config['js_runtimes'] = {'deno': {'path': deno}}
+        quickjs = _quickjs_path()
+        if quickjs:
+            config['js_runtimes'] = {'quickjs': {'path': quickjs}}
     return json.loads(ytdl_bridge.configure(json.dumps(config)))
 
 

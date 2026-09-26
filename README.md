@@ -12,7 +12,7 @@ links to the desktop app.
 |---|---|---|---|---|
 | UI | SwiftUI | Jetpack Compose (Material 3) | SwiftUI | Compose Desktop (Material 3) |
 | Python | CPython 3.14 via [Python-Apple-support](https://github.com/beeware/Python-Apple-support) | CPython 3.14 via [Chaquopy](https://chaquo.com/chaquopy/) | CPython 3.14 via [python-build-standalone](https://github.com/astral-sh/python-build-standalone) | Same |
-| YouTube's JS challenges | JavaScriptCore | V8 via Jetpack JavaScriptEngine | JavaScriptCore | [Deno](https://deno.com) |
+| YouTube's JS challenges | JavaScriptCore | V8 via Jetpack JavaScriptEngine | JavaScriptCore | [QuickJS-ng](https://github.com/quickjs-ng/quickjs) |
 | Merging streams | Embedded FFmpeg (remux only) | Same FFmpeg code via JNI | Same FFmpeg code as a library | Same |
 | Where files go | Photos (videos), Files › Squirrel (audio) | Movies/Squirrel (Gallery), Music/Squirrel | ~/Downloads/Squirrel (you can change it) | Same |
 | Getting links in | Paste, **share sheet**, `squirrel://` URL | Paste, **share sheet**, `squirrel://` URL | Paste, menu bar, **right-click** in browsers, **Share menu**, Services | Paste, **right-click** in browsers |
@@ -60,7 +60,7 @@ branding/          Icon sources and colours
 The mobile apps each provide a small `_host` module that the shared bridge calls to run
 JavaScript: `ios/App/Bridge/PyBridge.c` (JavaScriptCore) and
 `android/app/src/main/python/_host.py` (V8). On the Mac, `desktop/host/_host.py` calls the system
-JavaScriptCore through ctypes. Windows has no built-in engine that yt-dlp can use, so it bundles Deno.
+JavaScriptCore through ctypes. Windows has no built-in engine that yt-dlp can use, so it bundles QuickJS-ng (2 MB).
 
 ## How it works
 

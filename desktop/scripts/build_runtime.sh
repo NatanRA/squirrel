@@ -20,16 +20,18 @@ PY_MINOR="${PY_MINOR:-3.14}"
 # Keep in sync with android/app/build.gradle.kts and ios/scripts/bootstrap.sh
 YTDLP_VERSION="${YTDLP_VERSION:-2026.8.19}"
 EJS_VERSION="${EJS_VERSION:-0.8.0}"
+# JavaScript for YouTube's challenges where the OS has no engine yt-dlp can use (macOS has JavaScriptCore)
+QUICKJS_VERSION="${QUICKJS_VERSION:-v0.17.0}"
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 BUILD="$REPO/desktop/build"
 OUT="$BUILD/runtime-$TARGET"
 
 case "$TARGET" in
-    macos-arm64)    TRIPLE=aarch64-apple-darwin;      PLATFORMS=(macosx_11_0_arm64 macosx_14_0_arm64); DENO="" ;;
-    macos-x86_64)   TRIPLE=x86_64-apple-darwin;       PLATFORMS=(macosx_10_12_x86_64 macosx_11_0_x86_64); DENO="" ;;
-    windows-x86_64) TRIPLE=x86_64-pc-windows-msvc;    PLATFORMS=(win_amd64); DENO="deno" ;;
-    linux-x86_64)   TRIPLE=x86_64-unknown-linux-gnu;  PLATFORMS=(manylinux2014_x86_64 manylinux_2_27_x86_64 manylinux_2_28_x86_64); DENO="deno" ;;
+    macos-arm64)    TRIPLE=aarch64-apple-darwin;      PLATFORMS=(macosx_11_0_arm64 macosx_14_0_arm64); QJS="" ;;
+    macos-x86_64)   TRIPLE=x86_64-apple-darwin;       PLATFORMS=(macosx_10_12_x86_64 macosx_11_0_x86_64); QJS="" ;;
+    windows-x86_64) TRIPLE=x86_64-pc-windows-msvc;    PLATFORMS=(win_amd64); QJS=qjs-windows-x86_64.exe ;;
+    linux-x86_64)   TRIPLE=x86_64-unknown-linux-gnu;  PLATFORMS=(manylinux2014_x86_64 manylinux_2_27_x86_64 manylinux_2_28_x86_64); QJS=qjs-linux-x86_64 ;;
     *) echo "Unknown target $TARGET" >&2; exit 1 ;;
 esac
 
@@ -60,19 +62,34 @@ echo "==> yt-dlp $YTDLP_VERSION"
 PLATFORM_ARGS=(); for p in "${PLATFORMS[@]}"; do PLATFORM_ARGS+=(--platform "$p"); done
 python3 -m pip install --quiet --disable-pip-version-check --no-compile \
     --target "$OUT/lib" --implementation cp --python-version "$PY_MINOR" --only-binary=:all: \
-    "${PLATFORM_ARGS[@]}" "yt-dlp==$YTDLP_VERSION" "yt-dlp-ejs==$EJS_VERSION" $DENO \
+    "${PLATFORM_ARGS[@]}" "yt-dlp==$YTDLP_VERSION" "yt-dlp-ejs==$EJS_VERSION" \
     certifi brotli requests urllib3 websockets pycryptodomex
 # That's yt-dlp's "default" extra minus mutagen (GPL), which it only uses to embed thumbnails
-rm -rf "$OUT"/lib/*.dist-info/RECORD "$OUT/lib/yt_dlp/__pyinstaller" "$OUT/lib/share"
-# Console scripts point at the build machine's Python; only Deno's binary is used
-find "$OUT/lib/bin" -type f ! -name deno ! -name deno.exe -delete 2>/dev/null || true
+rm -rf "$OUT"/lib/*.dist-info/RECORD "$OUT/lib/yt_dlp/__pyinstaller" "$OUT/lib/share" "$OUT/lib/bin"
+
+if [ -n "$QJS" ]; then
+    # QuickJS-ng: a 2 MB engine yt-dlp supports (Deno, the other choice, is ~100 MB)
+    echo "==> QuickJS-ng $QUICKJS_VERSION"
+    QJS_FILE="$CACHE/quickjs-$QUICKJS_VERSION-$QJS"
+    [ -f "$QJS_FILE" ] || curl -fL --progress-bar -o "$QJS_FILE" \
+        "https://github.com/quickjs-ng/quickjs/releases/download/$QUICKJS_VERSION/$QJS"
+    mkdir -p "$OUT/lib/bin"
+    QJS_NAME=qjs; [[ "$QJS" == *.exe ]] && QJS_NAME=qjs.exe
+    cp "$QJS_FILE" "$OUT/lib/bin/$QJS_NAME" && chmod +x "$OUT/lib/bin/$QJS_NAME"
+fi
+
+# Parts of Python the engine never uses: the Tk GUI toolkit, IDLE, pip's installer, headers
+PYLIB="$OUT/python/Lib"; [ -d "$PYLIB" ] || PYLIB="$(echo "$OUT"/python/lib/python3.*)"
+rm -rf "$PYLIB"/{tkinter,idlelib,turtledemo,ensurepip,pydoc_data,lib2to3,test,turtle.py} \
+    "$OUT"/python/{tcl,include,libs} "$OUT"/python/lib/{tcl*,tk*,itcl*,thread*} "$OUT"/python/lib/libtcl* "$OUT"/python/lib/libtk* \
+    "$OUT"/python/DLLs/{_tkinter.pyd,tcl*.dll,tk*.dll,zlib*.dll.bak} "$PYLIB"/lib-dynload/_tkinter* 2>/dev/null || true
 
 echo "==> Host"
 mkdir -p "$OUT/app" "$OUT/remux"
 cp "$REPO"/shared/pybridge/*.py "$OUT/app/"
 cp "$REPO/desktop/host/squirrel_host.py" "$REPO/desktop/host/remux.py" "$OUT/app/"
 case "$TARGET" in
-    # JavaScriptCore comes with macOS, so the Mac app needs no Deno
+    # JavaScriptCore comes with macOS, so the Mac app needs no QuickJS
     macos-*) cp "$REPO/desktop/host/_host.py" "$OUT/app/" ;;
 esac
 cp "$REMUX"/* "$OUT/remux/"

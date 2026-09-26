@@ -1,9 +1,9 @@
 """Mac implementation of ``_host``: runs yt-dlp's YouTube challenge solver in
-the system JavaScriptCore, like the iOS app, so no Deno needs to be bundled.
+the system JavaScriptCore, like the iOS app, so no JavaScript engine needs to be bundled.
 
 Uses JavaScriptCore's C API through ctypes. As on Android, the solver's
 console.log output is collected in JavaScript and returned as the result.
-Only bundled in the Mac runtime; the Windows app uses Deno instead.
+Only bundled in the Mac runtime; the Windows app bundles QuickJS-ng instead.
 """
 from __future__ import annotations
 

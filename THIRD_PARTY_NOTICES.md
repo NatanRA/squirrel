@@ -53,7 +53,7 @@ The Mac app uses macOS's own JavaScriptCore; nothing else is bundled for it.
 
 | Project | License |
 |---|---|
-| [Deno](https://deno.com) (runs yt-dlp-ejs) | MIT |
+| [QuickJS-ng](https://github.com/quickjs-ng/quickjs) (runs yt-dlp-ejs on Windows) | MIT |
 | [Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform), Material 3, Material icons | Apache 2.0 |
 | [Kotlin](https://kotlinlang.org), kotlinx.coroutines, kotlinx.serialization | Apache 2.0 |
 | [Coil](https://coil-kt.github.io/coil/), [OkHttp](https://square.github.io/okhttp/) | Apache 2.0 |

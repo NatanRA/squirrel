@@ -49,7 +49,7 @@ def _purge_modules():
 
 def _register_js_provider():
     # Apps that expose their own JS engine as `_host` (iOS, Android, the Mac app)
-    # get the in-process provider; the Windows app uses yt-dlp's built-in Deno support.
+    # get the in-process provider; the Windows app uses yt-dlp's built-in QuickJS support.
     if importlib.util.find_spec('_host') is not None:
         import jsc_provider  # noqa: F401
 

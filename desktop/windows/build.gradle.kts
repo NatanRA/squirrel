@@ -13,7 +13,8 @@ val appVersion = (findProperty("appVersion") as String?) ?: "1.0.0"
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
-    implementation(compose.materialIconsExtended)
+    // The few icons not in core are in ui/Icons.kt: the extended set is ~36 MB
+    implementation("org.jetbrains.compose.material:material-icons-core:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation("io.coil-kt.coil3:coil-compose:3.6.3")
@@ -55,6 +56,8 @@ compose.desktop {
             vendor = "Squirrel"
             appResourcesRootDir.set(layout.buildDirectory.dir("app-resources"))
             modules("java.naming", "jdk.unsupported")
+            // The MSI itself is packaged by .github/workflows/windows.yml, with these same options
+            // plus packaging/ (installer artwork); packageMsi still works for local builds
             windows {
                 iconFile.set(project.file("icon.ico"))
                 menu = true

@@ -5,6 +5,10 @@ struct ContentView: View {
     @Environment(DownloadStore.self) private var store
     @Environment(AppSettings.self) private var settings
     @Environment(AppUpdateChecker.self) private var appUpdates
+    @Environment(LinkInbox.self) private var inbox
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
+    @AppStorage(SettingsView.tabKey) private var settingsTab = "general"
     @State private var urlText = ""
     @State private var isFetching = false
     @State private var info: VideoInfo?
@@ -59,9 +63,36 @@ struct ContentView: View {
             Divider()
             footer
         }
+        .toolbar {
+            ToolbarItemGroup {
+                Button { showSettings(tab: "browsers") } label: {
+                    Label("Browsers", systemImage: "globe")
+                }
+                .help("Add Squirrel to your browsers")
+                Button { NSWorkspace.shared.open(settings.downloadFolder) } label: {
+                    Label("Show Downloads", systemImage: "folder")
+                }
+                .help("Show the Squirrel folder in Finder")
+                Button { showSettings(tab: "general") } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .help("Settings")
+            }
+        }
         .onAppear {
             fieldFocused = true
-            pasteLinkFromClipboard()
+            inbox.mainWindowIsOpen = true
+            inbox.openMainWindow = { openWindow(id: "main") }
+            if inbox.pending == nil { pasteLinkFromClipboard() }
+        }
+        .onDisappear { inbox.mainWindowIsOpen = false }
+        // Links from the Share menu, the Safari extension and the Services menu
+        .onChange(of: inbox.pending, initial: true) { _, link in
+            guard let link else { return }
+            inbox.pending = nil
+            info = nil
+            urlText = link
+            fetch()
         }
         .sheet(item: $info) { info in
             FormatPicker(info: info) { choice in
@@ -71,7 +102,11 @@ struct ContentView: View {
             }
         }
         .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
-        .onOpenURL(perform: handleOpenURL)
+    }
+
+    private func showSettings(tab: String) {
+        settingsTab = tab
+        openSettings()
     }
 
     /// A newer Squirrel is out: Download fetches its disk image in the browser.
@@ -101,8 +136,10 @@ struct ContentView: View {
                 Text("Starting yt-dlp…")
             }
             Spacer()
-            Button("Show Downloads") { NSWorkspace.shared.open(settings.downloadFolder) }
-                .buttonStyle(.link)
+            if store.items.isEmpty {
+                Button("Add Squirrel to your browser") { showSettings(tab: "browsers") }
+                    .buttonStyle(.link)
+            }
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -151,15 +188,6 @@ struct ContentView: View {
               let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
               ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
         urlText = url.absoluteString
-    }
-
-    /// squirrel://download?url=<link>, sent by the Share menu extension.
-    private func handleOpenURL(_ url: URL) {
-        guard let link = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-            .queryItems?.first(where: { $0.name == "url" })?.value, !link.isEmpty else { return }
-        info = nil
-        urlText = link
-        fetch()
     }
 
     private func fetch() {

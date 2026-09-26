@@ -22,7 +22,7 @@
     "service_worker": "background.js",
     "scripts": ["background.js"]
   },
-  "permissions": ["nativeMessaging", "activeTab"],
+  "permissions": ["nativeMessaging", "activeTab", "contextMenus", "notifications"],
   "browser_specific_settings": {
     "gecko": {
       "id": "squirrel@extension",

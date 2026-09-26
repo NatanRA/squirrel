@@ -13,14 +13,14 @@ cd "$ROOT"
 [ -d Vendor/FFmpeg.xcframework ] || ./scripts/build_ffmpeg.sh
 xcodegen generate --quiet
 
-rm -rf "$BUILD/dd" "$BUILD/Payload" "$BUILD/Squirrel.ipa"
+rm -rf "$BUILD/dd.noindex" "$BUILD/Payload" "$BUILD/Squirrel.ipa"
 xcodebuild -project Squirrel.xcodeproj -scheme Squirrel -configuration Release \
-    -destination 'generic/platform=iOS' -derivedDataPath "$BUILD/dd" \
+    -destination 'generic/platform=iOS' -derivedDataPath "$BUILD/dd.noindex" \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
     ${APP_VERSION:+MARKETING_VERSION=$APP_VERSION} ${APP_BUILD:+CURRENT_PROJECT_VERSION=$APP_BUILD} \
     build -quiet
 
-APP="$BUILD/dd/Build/Products/Release-iphoneos/Squirrel.app"
+APP="$BUILD/dd.noindex/Build/Products/Release-iphoneos/Squirrel.app"
 
 # Ad-hoc sign inside-out so tools that expect a signature (e.g. TrollStore) accept it.
 find "$APP/Frameworks" -maxdepth 1 -name "*.framework" -print0 | xargs -0 -n1 codesign --force --sign - --timestamp=none

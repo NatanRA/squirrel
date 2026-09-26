@@ -1,9 +1,10 @@
 // Squirrel's background worker: owns the connection to the desktop app's
 // download engine (native messaging) so downloads keep going after the popup
-// closes. The popup talks to this worker with runtime messages.
+// closes. The popup talks to this worker with runtime messages. It also adds
+// "Download with Squirrel" to the right-click menu.
 
 const api = globalThis.browser ?? globalThis.chrome;
-const HOST = 'com.natan.squirrel';  // desktop/*/NativeMessaging registers this
+const HOST = 'app.squirrel';  // desktop/*/NativeMessaging registers this
 const IDLE_DISCONNECT_MS = 60_000;   // lets the engine exit once nothing is running
 
 let port = null;
@@ -93,8 +94,64 @@ async function download({ url, title, thumbnail, choice }) {
   } finally {
     clearInterval(poll);
     scheduleIdleDisconnect();
+    notify(job);
   }
 }
+
+/** A system notification when a download finishes or fails, since the popup has usually closed. */
+function notify(job) {
+  if (!api.notifications || !['finished', 'failed'].includes(job.status)) return;
+  const failed = job.status === 'failed';
+  api.notifications.create(job.id, {
+    type: 'basic',
+    iconUrl: api.runtime.getURL('icons/icon-128.png'),
+    title: failed ? 'Download failed' : 'Downloaded',
+    message: failed && job.error === 'NO_HOST' ? 'Squirrel for desktop isn’t installed' : (job.title ?? job.url),
+  });
+}
+
+// region Right-click › Download with Squirrel
+
+const MENU_ID = 'squirrel-download';
+let pendingUrl = null;  // handed to the popup when it opens
+
+api.runtime.onInstalled.addListener(() => {
+  api.contextMenus.create({
+    id: MENU_ID,
+    title: 'Download with Squirrel',
+    contexts: ['page', 'link', 'video', 'audio', 'frame'],
+  });
+});
+
+/** The link that was right-clicked, else an embedded player's page, else the page itself. */
+function linkFor(info, tab) {
+  const web = (url) => (/^https?:\/\//i.test(url ?? '') ? url : null);
+  const frame = info.frameUrl && info.frameUrl !== info.pageUrl ? info.frameUrl : null;
+  return web(info.linkUrl) ?? web(frame) ?? web(info.pageUrl) ?? web(tab?.url);
+}
+
+api.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId !== MENU_ID) return;
+  const url = linkFor(info, tab);
+  if (!url) return;
+  pendingUrl = url;
+  // The popup opens with this link and its formats. openPopup has to run during the click;
+  // browsers without it get the popup as a small window instead.
+  const inWindow = () => {
+    pendingUrl = null;
+    api.windows.create({
+      url: api.runtime.getURL(`popup.html?url=${encodeURIComponent(url)}`),
+      type: 'popup', width: 380, height: 600,
+    });
+  };
+  try {
+    api.action.openPopup().catch(inWindow);
+  } catch {
+    inWindow();
+  }
+});
+
+// endregion
 
 function updateProgress(job, progress) {
   if (!isActive(job) || !progress?.ok) return;
@@ -139,6 +196,11 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return await call('cancel', { job_id: message.jobId });
       case 'jobs':
         return { ok: true, jobs: [...jobs.values()].reverse() };
+      case 'pending': {  // the link a right-click opened the popup for
+        const url = pendingUrl;
+        pendingUrl = null;
+        return { ok: true, url };
+      }
       case 'clear':
         for (const job of [...jobs.values()]) if (!isActive(job)) jobs.delete(job.id);
         return { ok: true };

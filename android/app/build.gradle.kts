@@ -10,11 +10,11 @@ val ytdlpVersion = "2026.8.19"
 val ejsVersion = "0.8.0"
 
 android {
-    namespace = "com.natan.ytdlp"
+    namespace = "app.squirrel"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.natan.ytdlp"
+        applicationId = "app.squirrel"
         minSdk = 29          // MediaStore RELATIVE_PATH (saving to Movies/ and Music/)
         targetSdk = 36
         // Set by scripts/release.sh from the release tag

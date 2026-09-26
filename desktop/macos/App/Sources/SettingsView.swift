@@ -1,19 +1,30 @@
 import AppKit
 import SwiftUI
 
+/// Settings (⌘,): tabs for downloads, browsers, accounts, updates and about.
 struct SettingsView: View {
-    /// Browsers the extension's engine link was installed for this launch.
-    let browsers: [String]
-
-    @Environment(AppSettings.self) private var settings
-    @Environment(UpdateManager.self) private var updates
-    @Environment(DownloadStore.self) private var store
-
-    private static let sourceURL = URL(string: "https://github.com/NatanRA/squirrel")!
+    /// Shared so other windows can open a particular tab
+    static let tabKey = "settings.tab"
+    @AppStorage(tabKey) private var tab = "general"
 
     var body: some View {
-        @Bindable var settings = settings
-        @Bindable var updates = updates
+        TabView(selection: $tab) {
+            GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }.tag("general")
+            BrowserSettings().tabItem { Label("Browsers", systemImage: "globe") }.tag("browsers")
+            AccountSettings().tabItem { Label("Accounts", systemImage: "person.crop.circle") }.tag("accounts")
+            UpdateSettings().tabItem { Label("Updates", systemImage: "arrow.triangle.2.circlepath") }.tag("updates")
+            AboutSettings().tabItem { Label("About", systemImage: "info.circle") }.tag("about")
+        }
+        .frame(width: 560, height: 520)
+    }
+}
+
+private struct GeneralSettings: View {
+    @Environment(AppSettings.self) private var settings
+    @AppStorage(MenuBar.shownKey) private var showMenuBar = true
+    @AppStorage(Notifier.enabledKey) private var notify = true
+
+    var body: some View {
         Form {
             Section("Downloads") {
                 LabeledContent("Save to") {
@@ -25,29 +36,80 @@ struct SettingsView: View {
                         Button("Choose…", action: chooseFolder)
                     }
                 }
+                Toggle("Notify me when downloads finish", isOn: $notify)
             }
+            Section {
+                Toggle("Show Squirrel in the menu bar", isOn: $showMenuBar)
+            } footer: {
+                Text("Download a link and follow progress from the menu bar, without opening this window.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
 
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose"
+        panel.directoryURL = settings.downloadFolder
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.downloadFolder = url
+        }
+    }
+}
+
+private struct AccountSettings: View {
+    @Environment(AppSettings.self) private var settings
+
+    var body: some View {
+        @Bindable var settings = settings
+        Form {
             Section {
                 Picker("Use cookies from", selection: $settings.cookieBrowser) {
                     ForEach(CookieBrowser.allCases) { Text($0.name).tag($0) }
                 }
-            } header: {
-                Text("Accounts")
             } footer: {
                 Text("Lets Squirrel download videos that need you to be signed in, using the browser you're signed in with. macOS may ask for access. YouTube may flag accounts used this way.")
                     .foregroundStyle(.secondary)
             }
+        }
+        .formStyle(.grouped)
+    }
+}
 
+private struct AboutSettings: View {
+    private static let sourceURL = URL(string: "https://github.com/NatanRA/squirrel")!
+
+    var body: some View {
+        Form {
             Section {
-                LabeledContent("Browsers", value: browsers.isEmpty ? "None found" : browsers.joined(separator: ", "))
-                Link("Get the Extension", destination: Self.sourceURL.appending(path: "tree/main/extension"))
-            } header: {
-                Text("Browser Extension")
+                LabeledContent {
+                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+                } label: {
+                    Text("Squirrel")
+                    Text("Powered by yt-dlp and FFmpeg")
+                }
+                Link("Open-Source Licenses", destination: Self.sourceURL.appending(path: "blob/main/THIRD_PARTY_NOTICES.md"))
+                Link("Source Code", destination: Self.sourceURL)
             } footer: {
-                Text("The Squirrel extension for Chrome, Edge, Brave and Firefox uses this app to download. Keep the app installed; it doesn't need to be open.")
+                Text("Squirrel is free software under the GPL 3.0, built on yt-dlp (public domain), FFmpeg (LGPL 2.1) and Python. It isn't affiliated with YouTube or any site it downloads from.")
                     .foregroundStyle(.secondary)
             }
+        }
+        .formStyle(.grouped)
+    }
+}
 
+private struct UpdateSettings: View {
+    @Environment(UpdateManager.self) private var updates
+    @Environment(DownloadStore.self) private var store
+
+    var body: some View {
+        @Bindable var updates = updates
+        Form {
             Section {
                 LabeledContent("yt-dlp", value: updates.runningVersion.map(UpdateManager.display) ?? "…")
                 updateStatus
@@ -59,8 +121,6 @@ struct SettingsView: View {
                         Button("Revert to Built-in") { Task { await updates.revertToBundled() } }
                     }
                 }
-            } header: {
-                Text("Updates")
             } footer: {
                 Group {
                     if let error = updates.loadError {
@@ -73,25 +133,8 @@ struct SettingsView: View {
                     }
                 }
             }
-
-            Section {
-                LabeledContent {
-                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
-                } label: {
-                    Text("Squirrel")
-                    Text("Powered by yt-dlp and FFmpeg")
-                }
-                Link("Open-Source Licenses", destination: Self.sourceURL.appending(path: "blob/main/THIRD_PARTY_NOTICES.md"))
-                Link("Source Code", destination: Self.sourceURL)
-            } header: {
-                Text("About")
-            } footer: {
-                Text("Squirrel is free software under the GPL 3.0, built on yt-dlp (public domain), FFmpeg (LGPL 2.1) and Python. It isn't affiliated with YouTube or any site it downloads from.")
-                    .foregroundStyle(.secondary)
-            }
         }
         .formStyle(.grouped)
-        .frame(width: 500, height: 620)
         .task { await updates.refreshStatus() }
     }
 
@@ -138,18 +181,6 @@ struct SettingsView: View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
             Text(text).foregroundStyle(.secondary)
-        }
-    }
-
-    private func chooseFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.prompt = "Choose"
-        panel.directoryURL = settings.downloadFolder
-        if panel.runModal() == .OK, let url = panel.url {
-            settings.downloadFolder = url
         }
     }
 }

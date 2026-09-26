@@ -17,6 +17,11 @@ typedef struct {
     bool finished;
 } Input;
 
+/** MP4, M4A and MOV: the QuickTime family Apple's players read */
+static bool is_quicktime(const char *format) {
+    return strcmp(format, "mp4") == 0 || strcmp(format, "ipod") == 0 || strcmp(format, "mov") == 0;
+}
+
 static void set_error(char *error, size_t size, const char *what, int code) {
     char reason[AV_ERROR_MAX_STRING_SIZE] = "";
     if (code < 0) {
@@ -116,6 +121,11 @@ int ytdl_remux(const char *const *inputs, int input_count, const char *output, c
                 goto end;
             }
             out_stream->codecpar->codec_tag = 0;  // let the muxer pick its own tag
+            if (stream->codecpar->codec_id == AV_CODEC_ID_HEVC && is_quicktime(format)) {
+                // FFmpeg's default for HEVC in MP4 is hev1, which Apple's players and Photos
+                // refuse ("PHPhotosErrorDomain error 3302"). hvc1 plays everywhere.
+                out_stream->codecpar->codec_tag = MKTAG('h', 'v', 'c', '1');
+            }
             out_stream->time_base = stream->time_base;
             av_dict_copy(&out_stream->metadata, stream->metadata, 0);  // e.g. audio language
             in[i].stream_map[s] = out_stream->index;
@@ -139,7 +149,7 @@ int ytdl_remux(const char *const *inputs, int input_count, const char *output, c
         set_error(error, error_size, "Could not create output file", ret);
         goto end;
     }
-    if (strcmp(format, "mp4") == 0 || strcmp(format, "ipod") == 0 || strcmp(format, "mov") == 0) {
+    if (is_quicktime(format)) {
         av_dict_set(&options, "movflags", "+faststart", 0);  // index up front: streams and scrubs well
     }
     ret = avformat_write_header(out, &options);

@@ -2,7 +2,7 @@ import BackgroundTasks
 import OSLog
 import UIKit
 
-private let log = Logger(subsystem: "com.natan.ytdlp", category: "background")
+private let log = Logger(subsystem: "app.squirrel", category: "background")
 
 /// Keeps one download running after the user leaves the app.
 ///
@@ -53,7 +53,7 @@ final class BackgroundContinuation {
 
     // MARK: - iOS 26 continued processing
 
-    /// The permitted wildcard (e.g. "com.natan.ytdlp.download.*") from Info.plist.
+    /// The permitted wildcard (e.g. "app.squirrel.download.*") from Info.plist.
     private static let identifierPrefix: String? = {
         let permitted = Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String]
         return permitted?.first { $0.hasSuffix(".*") }.map { String($0.dropLast()) }

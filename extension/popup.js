@@ -133,12 +133,19 @@ async function init() {
   $('form').addEventListener('submit', fetchFormats);
   $('clear').addEventListener('click', async () => { await send({ type: 'clear' }); refreshJobs(); });
 
-  // Start with the current page's address; the field stays editable.
-  try {
-    const [tab] = await api.tabs.query({ active: true, currentWindow: true });
-    if (/^https?:\/\//.test(tab?.url ?? '')) $('url').value = tab.url;
-  } catch { /* no tab access; paste instead */ }
-  $('url').select();
+  // Opened by right-click › Download with Squirrel: that link, with its formats straight away
+  const clicked = new URLSearchParams(location.search).get('url') ?? (await send({ type: 'pending' }))?.url;
+  if (clicked) {
+    $('url').value = clicked;
+    fetchFormats();
+  } else {
+    // Start with the current page's address; the field stays editable.
+    try {
+      const [tab] = await api.tabs.query({ active: true, currentWindow: true });
+      if (/^https?:\/\//.test(tab?.url ?? '')) $('url').value = tab.url;
+    } catch { /* no tab access; paste instead */ }
+    $('url').select();
+  }
 
   refreshJobs();
   setInterval(refreshJobs, 500);

@@ -104,6 +104,14 @@ final class DownloadStore {
 
     var hasActiveDownloads: Bool { items.contains { $0.state.isActive } }
 
+    /// Downloads running now, and how far along they are together (nil until sizes are known)
+    var activeProgress: (count: Int, fraction: Double?) {
+        let active = items.filter(\.state.isActive)
+        let fractions = active.compactMap { live[$0.id]?.fraction }
+        guard !active.isEmpty, !fractions.isEmpty else { return (active.count, nil) }
+        return (active.count, fractions.reduce(0, +) / Double(active.count))
+    }
+
     init() {
         load()
         // Anything that was running when the app quit can't be resumed.
@@ -143,6 +151,7 @@ final class DownloadStore {
             choice: choice, state: .queued, createdAt: .now)
         items.insert(item, at: 0)
         save()
+        Notifier.shared.requestPermission()
         Task { await perform(item.id) }
     }
 
@@ -163,6 +172,7 @@ final class DownloadStore {
         }
         items.removeAll { $0.id == id }
         save()
+        refreshDock()
     }
 
     func clearFinished() {
@@ -187,6 +197,7 @@ final class DownloadStore {
         let jobID = id.uuidString
         update(id) { $0.state = .extracting }
         live[id] = LiveProgress(parts: item.choice.formatIDs.count)
+        refreshDock()
 
         let poller = Task { [weak self] in
             while !Task.isCancelled {
@@ -211,15 +222,23 @@ final class DownloadStore {
                 $0.title = result["title"] as? String ?? $0.title
                 $0.filePath = result["path"] as? String
             }
+            if let finished = items.first(where: { $0.id == id }) { Notifier.shared.finished(finished) }
         } catch let error as EngineError where error.cancelled {
             update(id) { $0.state = .cancelled }
         } catch {
             update(id) { $0.state = .failed(error.localizedDescription) }
+            if let failed = items.first(where: { $0.id == id }) { Notifier.shared.failed(failed, error.localizedDescription) }
         }
 
         poller.cancel()
         live[id] = nil
         save()
+        refreshDock()
+    }
+
+    private func refreshDock() {
+        let progress = activeProgress
+        DockProgress.shared.update(active: progress.count, fraction: progress.fraction)
     }
 
     private func apply(_ progress: [String: Any], to id: UUID) {
@@ -230,6 +249,7 @@ final class DownloadStore {
         current.part = progress["part"] as? Int ?? current.part
         current.parts = progress["parts"] as? Int ?? current.parts
         live[id] = current
+        refreshDock()
         guard let state = items.first(where: { $0.id == id })?.state, state.isActive else { return }
         if status == "downloading", state != .downloading {
             update(id) { $0.state = .downloading }

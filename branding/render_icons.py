@@ -68,6 +68,16 @@ print('wrote', os.path.relpath(ico_path, REPO))
 for size in (16, 32, 48, 128):
     save(png(soft, size), 'extension', 'icons', f'icon-{size}.png')
 
+# Mac menu bar: black template images, tinted by macOS to suit the menu bar
+menu_bar = open(os.path.join(HERE, 'menubar.svg')).read()
+menu_dir = ('desktop', 'macos', 'App', 'Assets.xcassets', 'MenuBarIcon.imageset')
+for scale in (1, 2, 3):
+    save(png(menu_bar, 18 * scale), *menu_dir, f'menubar@{scale}x.png')
+with open(os.path.join(REPO, *menu_dir, 'Contents.json'), 'w') as f:
+    f.write('{"images":[' + ','.join(
+        f'{{"filename":"menubar@{s}x.png","idiom":"universal","scale":"{s}x"}}' for s in (1, 2, 3))
+        + '],"info":{"author":"xcode","version":1},"properties":{"template-rendering-intent":"template"}}\n')
+
 # Sanity check that Android's copy of the mark still matches
 android = open(os.path.join(REPO, 'android', 'app', 'src', 'main', 'res', 'drawable', 'ic_launcher_foreground.xml')).read()
 for d in re.findall(r' d="([^"]+)"', open(os.path.join(HERE, 'mark.svg')).read()):

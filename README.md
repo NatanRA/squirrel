@@ -15,7 +15,7 @@ links to the desktop app.
 | YouTube's JS challenges | JavaScriptCore | V8 via Jetpack JavaScriptEngine | JavaScriptCore | [Deno](https://deno.com) |
 | Merging streams | Embedded FFmpeg (remux only) | Same FFmpeg code via JNI | Same FFmpeg code as a library | Same |
 | Where files go | Photos (videos), Files › Squirrel (audio) | Movies/Squirrel (Gallery), Music/Squirrel | ~/Downloads/Squirrel (you can change it) | Same |
-| Getting links in | Paste, **share sheet**, `squirrel://` URL | Paste, **share sheet**, `squirrel://` URL | Paste, **Share menu**, browser extension | Paste, browser extension |
+| Getting links in | Paste, **share sheet**, `squirrel://` URL | Paste, **share sheet**, `squirrel://` URL | Paste, menu bar, **right-click** in browsers, **Share menu**, Services | Paste, **right-click** in browsers |
 | Package | Ad-hoc signed IPA (~25 MB) | APK per CPU type (~21 MB) | Disk image per CPU type | MSI installer |
 
 None of this can go in the App Store or Google Play: both stores reject apps that download from
@@ -191,9 +191,15 @@ WINDOWS_MSI=/path/to/Squirrel-1.2.3.msi ./scripts/release.sh v1.2.3
   On a phone, **Delete** also removes the file from Photos or the Gallery (iOS asks you to
   confirm); on iOS, **Remove from List** keeps the video in Photos. On a computer, double-click to
   open, or right-click for **Show in Finder/Folder** and more.
-- **Browser extension:** click the squirrel, check the link (it starts with the page you're on),
-  pick a format, and the file is saved to the desktop app's download folder. Downloads keep going
-  after the popup closes.
+- **Browsers (computers):** right-click any video, link or page and choose **Download with
+  Squirrel**, or click the Squirrel button in the toolbar. The popup shows the formats, and the file
+  is saved to the desktop app's download folder; downloads keep going after it closes. Set it up
+  from the Mac app's **Settings › Browsers** (Brave, Chrome, Edge, Arc, Vivaldi, Firefox and
+  Safari), or see [extension/README.md](extension/README.md).
+- **Mac:** a squirrel in the menu bar downloads a copied link and shows progress without opening the
+  window, a notification says when each download finishes (click it to show the file), and the Dock
+  icon shows progress. In any app, select text with a link, then right-click › **Services** ›
+  **Download with Squirrel**.
 - **Settings › Accounts (phones):** **Sign In to a Site** opens an in-app browser. Log in and tap
   **Done**, and that site's cookies are used for downloads. **Import cookies.txt** accepts a
   Netscape-format export from a desktop browser.

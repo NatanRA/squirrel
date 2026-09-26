@@ -47,7 +47,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import javax.swing.JFileChooser
 
-private const val SOURCE_URL = "https://github.com/FormulaLatest/squirrel"
+private const val SOURCE_URL = "https://github.com/NatanRA/squirrel"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

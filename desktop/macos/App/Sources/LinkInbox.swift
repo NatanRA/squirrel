@@ -43,7 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
         Notifier.shared.start()
+        // At launch, not when the window opens: the browser extensions need these even if the
+        // window never does (or opens later)
         Browsers.refreshExtensionFolder()
+        NativeMessaging.register()
     }
 
     /// Keep running with the window closed: the menu bar item, the Share menu, Services and the

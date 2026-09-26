@@ -23,7 +23,6 @@ struct SquirrelApp: App {
                     .environment(LinkInbox.shared)
                     .task { await appUpdates.check() }
                     .task {
-                        NativeMessaging.register()
                         await store.start()
                         await updates.refreshStatus()
                         await updates.autoUpdateIfDue()

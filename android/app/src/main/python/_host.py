@@ -4,7 +4,7 @@ The iOS app provides the same module in C (ios/App/Bridge/PyBridge.c).
 """
 from java import jclass
 
-_JsEngine = jclass('com.natan.ytdlp.python.JsEngine')
+_JsEngine = jclass('app.squirrel.python.JsEngine')
 
 
 def run_js(code):

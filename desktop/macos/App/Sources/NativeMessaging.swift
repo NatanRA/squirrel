@@ -4,21 +4,23 @@ import Foundation
 /// reach it (native messaging). Rewritten on every launch, so it follows the
 /// app if it moves. Keep the ids in sync with extension/manifest.json.
 enum NativeMessaging {
-    static let hostName = "com.natan.squirrel"
+    static let hostName = "app.squirrel"
     /// From the public key in extension/manifest.json
     static let chromeExtensionIDs = ["hdacmehgeiecekdneiggfemjeolmdfbc"]
     static let firefoxExtensionID = "squirrel@extension"
 
-    /// Each browser's profile folder (in ~/Library/Application Support) and whether it's Firefox.
-    private static let browsers: [(name: String, folder: String, firefox: Bool)] = [
-        ("Chrome", "Google/Chrome", false),
-        ("Chrome Beta", "Google/Chrome Beta", false),
-        ("Chromium", "Chromium", false),
-        ("Microsoft Edge", "Microsoft Edge", false),
-        ("Brave", "BraveSoftware/Brave-Browser", false),
-        ("Vivaldi", "Vivaldi", false),
-        ("Arc", "Arc/User Data", false),
-        ("Firefox", "Mozilla", true),
+    /// Each browser's data folder (in ~/Library/Application Support), which shows it's installed,
+    /// and where it looks for native messaging hosts. Firefox keeps its data in "Firefox" but
+    /// reads hosts from "Mozilla".
+    private static let browsers: [(name: String, folder: String, hosts: String, firefox: Bool)] = [
+        ("Chrome", "Google/Chrome", "Google/Chrome/NativeMessagingHosts", false),
+        ("Chrome Beta", "Google/Chrome Beta", "Google/Chrome Beta/NativeMessagingHosts", false),
+        ("Chromium", "Chromium", "Chromium/NativeMessagingHosts", false),
+        ("Microsoft Edge", "Microsoft Edge", "Microsoft Edge/NativeMessagingHosts", false),
+        ("Brave", "BraveSoftware/Brave-Browser", "BraveSoftware/Brave-Browser/NativeMessagingHosts", false),
+        ("Vivaldi", "Vivaldi", "Vivaldi/NativeMessagingHosts", false),
+        ("Arc", "Arc/User Data", "Arc/User Data/NativeMessagingHosts", false),
+        ("Firefox", "Firefox", "Mozilla/NativeMessagingHosts", true),
     ]
 
     /// Installs the host manifest for every installed browser; returns their names.
@@ -40,7 +42,7 @@ enum NativeMessaging {
             } else {
                 manifest["allowed_origins"] = chromeExtensionIDs.map { "chrome-extension://\($0)/" }
             }
-            let folder = profile.appendingPathComponent("NativeMessagingHosts", isDirectory: true)
+            let folder = support.appendingPathComponent(browser.hosts, isDirectory: true)
             do {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])

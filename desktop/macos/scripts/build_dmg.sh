@@ -17,12 +17,12 @@ cd "$ROOT"
 [ -x "$BUILD/runtime-macos-$ARCH/squirrel-host" ] || "$DESKTOP/scripts/build_runtime.sh" "macos-$ARCH"
 xcodegen generate --quiet
 
-rm -rf "$BUILD/macos-dd"
+rm -rf "$BUILD/macos-dd.noindex"
 xcodebuild -project Squirrel.xcodeproj -scheme Squirrel -configuration Release \
-    -derivedDataPath "$BUILD/macos-dd" ARCHS="$ARCH" ONLY_ACTIVE_ARCH=NO \
+    -derivedDataPath "$BUILD/macos-dd.noindex" ARCHS="$ARCH" ONLY_ACTIVE_ARCH=NO \
     ${APP_VERSION:+MARKETING_VERSION=$APP_VERSION} ${APP_BUILD:+CURRENT_PROJECT_VERSION=$APP_BUILD} \
     build -quiet
-APP="$BUILD/macos-dd/Build/Products/Release/Squirrel.app"
+APP="$BUILD/macos-dd.noindex/Build/Products/Release/Squirrel.app"
 
 # Sign inside-out: every Mach-O file in the engine, then the app
 echo "==> Signing"

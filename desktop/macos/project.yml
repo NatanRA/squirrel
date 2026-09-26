@@ -1,6 +1,6 @@
 name: Squirrel
 options:
-  bundleIdPrefix: com.natan
+  bundleIdPrefix: app
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -18,12 +18,18 @@ targets:
     sources:
       - path: App/Sources
       - path: App/Assets.xcassets
+      # The browser extension, copied out for "Load unpacked" (Browsers.swift)
+      - path: ../../extension
+        type: folder
+        buildPhase: resources
     dependencies:
       - sdk: VideoToolbox.framework
+      - sdk: SafariServices.framework
       - target: SquirrelShare
+      - target: SquirrelSafari
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.natan.squirrel
+        PRODUCT_BUNDLE_IDENTIFIER: app.squirrel
         PRODUCT_NAME: Squirrel
         # One architecture per build: the bundled Python engine is per-architecture
         ARCHS: $(NATIVE_ARCH_ACTUAL)
@@ -46,9 +52,18 @@ targets:
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: Squirrel is open source. Powered by yt-dlp and FFmpeg.
         CFBundleURLTypes:
-          - CFBundleURLName: com.natan.squirrel
-            # squirrel://download?url=…, sent by the Share menu extension
+          - CFBundleURLName: app.squirrel
+            # squirrel://download?url=…, sent by the Share menu and Safari extensions
             CFBundleURLSchemes: [squirrel]
+        # Services › Download with Squirrel, for selected text containing a link (AppDelegate)
+        NSServices:
+          - NSMenuItem:
+              default: Download with Squirrel
+            NSMessage: downloadWithSquirrel
+            NSPortName: Squirrel
+            NSSendTypes: [NSStringPboardType, NSURLPboardType, public.utf8-plain-text, public.url]
+            NSRequiredContext:
+              NSTextContent: URL
     postBuildScripts:
       - name: Embed engine
         script: "\"$PROJECT_DIR/scripts/embed_runtime.sh\""
@@ -67,7 +82,7 @@ targets:
         com.apple.security.app-sandbox: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.natan.squirrel.share
+        PRODUCT_BUNDLE_IDENTIFIER: app.squirrel.share
         PRODUCT_NAME: SquirrelShare
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "-"
@@ -84,3 +99,36 @@ targets:
             NSExtensionActivationRule:
               NSExtensionActivationSupportsWebURLWithMaxCount: 1
               NSExtensionActivationSupportsText: true
+
+  # Squirrel's Safari extension: a toolbar button and "Download with Squirrel" when right-clicking.
+  # The web part is extension/safari; SafariWebExtensionHandler hands links to the app.
+  SquirrelSafari:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: SafariExtension
+      - path: ../../extension/safari
+        buildPhase: resources
+      - path: ../../extension/icons
+        buildPhase: resources
+    dependencies:
+      - sdk: SafariServices.framework
+    entitlements:
+      path: SafariExtension/SquirrelSafari.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.squirrel.safari
+        PRODUCT_NAME: SquirrelSafari
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+    info:
+      path: SafariExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Squirrel
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.Safari.web-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler

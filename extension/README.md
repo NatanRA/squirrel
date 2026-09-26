@@ -1,7 +1,9 @@
 # Squirrel browser extension
 
-A minimal popup for Chrome, Edge, Brave and Firefox: paste a link (it starts with the page you're
-on), pick a format, and the file is saved to the Squirrel desktop app's download folder.
+For Chrome, Edge, Brave, Arc, Vivaldi and Firefox: right-click any video, link or page and choose
+**Download with Squirrel**, or click the toolbar button. The popup opens with that link's formats
+(or the page you're on); pick one and the file is saved to the Squirrel desktop app's download
+folder. A notification says when it's done.
 
 The extension can't run yt-dlp itself, so it needs the **Squirrel app for Mac or Windows**
 installed and opened once. The app registers its download engine with your browsers through
@@ -10,6 +12,9 @@ each time it starts. After that, the app doesn't need to be open. Downloads keep
 popup closes.
 
 ## Install
+
+The Mac app walks you through this in **Settings › Browsers**, and keeps an up-to-date copy of the
+extension to load in `~/Library/Application Support/Squirrel/Browser Extension`.
 
 The Chrome Web Store and Firefox Add-ons don't list YouTube downloaders, so install it yourself:
 
@@ -29,6 +34,12 @@ Then open the signed `.xpi` in Firefox. To try it without signing, use `about:de
 **This Firefox** › **Load Temporary Add-on** and pick `manifest.json` (it's removed when Firefox
 restarts).
 
+**Safari (Mac):** the Safari version is built into the Mac app (`safari/` here, plus
+`desktop/macos/SafariExtension`). It hands links to the app rather than to the engine. Because the
+app isn't signed by an Apple developer, turn on Safari › Settings › Advanced › **Show features for
+web developers**, then Developer › **Allow unsigned extensions** (Safari turns this off when it
+quits), and turn Squirrel on under Extensions.
+
 ## Files
 
 - `manifest.json`: Manifest V3, valid in both browsers (Chrome uses `service_worker`, Firefox uses
@@ -39,4 +50,4 @@ restarts).
 
 If you change the extension's ID (for example, after publishing it to a store), add the new ID to
 `desktop/macos/App/Sources/NativeMessaging.swift` and
-`desktop/windows/src/main/kotlin/com/natan/squirrel/NativeMessaging.kt`.
+`desktop/windows/src/main/kotlin/app/squirrel/NativeMessaging.kt`.

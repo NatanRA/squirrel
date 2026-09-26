@@ -26,7 +26,7 @@ static void release_c_strings(JNIEnv *env, jobjectArray array, const char **stri
 
 /// Remuxer.remux(inputs, output, muxer, metadataKeyValues): error message, or null on success.
 __attribute__((visibility("default")))
-JNIEXPORT jstring JNICALL Java_com_natan_ytdlp_Remuxer_remux(
+JNIEXPORT jstring JNICALL Java_app_squirrel_Remuxer_remux(
         JNIEnv *env, jclass clazz, jobjectArray inputs, jstring output, jstring muxer, jobjectArray metadata) {
     (void)clazz;
     int input_count, metadata_count;

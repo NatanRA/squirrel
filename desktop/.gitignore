@@ -5,3 +5,4 @@ windows/.gradle/
 windows/.kotlin/
 windows/build/
 macos/ShareExtension/Info.plist
+macos/SafariExtension/Info.plist

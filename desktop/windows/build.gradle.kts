@@ -46,7 +46,7 @@ tasks.matching { it.name == "prepareAppResources" }.configureEach {
 
 compose.desktop {
     application {
-        mainClass = "com.natan.squirrel.MainKt"
+        mainClass = "app.squirrel.MainKt"
         nativeDistributions {
             targetFormats(TargetFormat.Msi)
             packageName = "Squirrel"

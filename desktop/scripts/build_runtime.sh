@@ -77,19 +77,19 @@ case "$TARGET" in
 esac
 cp "$REMUX"/* "$OUT/remux/"
 
+# Compiled bytecode goes to the user's cache folder (pycache_prefix), never into the app:
+# writing inside the Mac app breaks its signature, and macOS and Safari then distrust it.
 if [ "$TARGET" = windows-x86_64 ]; then
-    printf '@echo off\r\n"%%~dp0python\\python.exe" -I -X utf8 "%%~dp0app\\squirrel_host.py" %%*\r\n' > "$OUT/squirrel-host.bat"
+    printf '@echo off\r\n"%%~dp0python\\python.exe" -I -X utf8 -X "pycache_prefix=%%LOCALAPPDATA%%\\Squirrel\\pycache" "%%~dp0app\\squirrel_host.py" %%*\r\n' > "$OUT/squirrel-host.bat"
 else
     cat > "$OUT/squirrel-host" <<'EOF'
 #!/bin/sh
 DIR="$(cd "$(dirname "$0")" && pwd)"
-exec "$DIR/python/bin/python3" -I -X utf8 "$DIR/app/squirrel_host.py" "$@"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}"
+[ "$(uname)" = Darwin ] && CACHE="$HOME/Library/Caches"
+exec "$DIR/python/bin/python3" -I -X utf8 -X "pycache_prefix=$CACHE/Squirrel/pycache" "$DIR/app/squirrel_host.py" "$@"
 EOF
     chmod +x "$OUT/squirrel-host"
-    # Precompile when the target can run here: faster first start from a read-only app bundle
-    if "$OUT/python/bin/python3" -c 'pass' 2>/dev/null; then
-        "$OUT/python/bin/python3" -I -m compileall -q -j0 "$OUT/lib" "$OUT/app" >/dev/null || true
-    fi
 fi
 
 echo "==> Done: $OUT ($(du -sh "$OUT" | cut -f1))"

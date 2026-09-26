@@ -38,6 +38,13 @@ enum Browsers {
 
     private static let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
 
+    /// Browsers and Safari keep using wherever the app ran from, so it has to stay put: not the
+    /// disk image, and not Downloads (where macOS runs a temporary copy).
+    static var runsFromApplications: Bool {
+        let path = Bundle.main.bundlePath
+        return path.hasPrefix("/Applications/") || path.hasPrefix(NSHomeDirectory() + "/Applications/")
+    }
+
     static func installed() async -> [BrowserStatus] {
         var result: [BrowserStatus] = []
         for browser in known {
@@ -106,6 +113,13 @@ struct BrowserSettings: View {
             Section {
                 Text("Add Squirrel to your browser, then right-click any video, link or page and choose **Download with Squirrel**, or use the Squirrel button in the toolbar. Downloads go to your Squirrel folder.")
                     .foregroundStyle(.secondary)
+            }
+            if !Browsers.runsFromApplications {
+                Section {
+                    Label("Move Squirrel to your Applications folder and open it from there first. Browsers, and Safari especially, can't use it where it is now.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
             }
             if browsers.isEmpty {
                 Section { Text("Looking for browsers…").foregroundStyle(.secondary) }

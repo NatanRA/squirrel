@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Squirrel's colours; keep in sync with branding/README.md -->
+    <color name="icon_background">#B8532A</color>
+    <color name="accent">#B4502A</color>
+    <!-- Behind the launch animation; LaunchSplash.kt uses the same colours -->
+    <color name="launch_background">#FFF7F0</color>
+</resources>

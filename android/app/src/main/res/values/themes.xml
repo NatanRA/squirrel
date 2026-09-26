@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Squirrel" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- The launch animation's background, so starting up doesn't flash white -->
+        <item name="android:windowBackground">@color/launch_background</item>
+    </style>
+</resources>

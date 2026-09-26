@@ -1,0 +1,23 @@
+# iOS
+ios/build/
+ios/Vendor/
+ios/Squirrel.xcodeproj/
+ios/YTDL.xcodeproj/
+ios/App/Info.plist
+ios/ShareExtension/Info.plist
+
+# Android
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/app/src/main/cpp/ffmpeg/
+android/local.properties
+android/vendor/
+
+__pycache__/
+.DS_Store
+
+# Release artifacts
+build/

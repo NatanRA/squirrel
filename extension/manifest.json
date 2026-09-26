@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Squirrel",
+  "version": "1.0.0",
+  "description": "Paste a link, pick a quality, and Squirrel saves it to your downloads folder.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAy2QimbrjSnuIPuL99NWbt9IB3VFJgCzK9a2e2B0RJ1tb4Eby6NsLT769PFc/CMyRN1A2lbniYEXdvCSwL1Cim1WClnQfAkdIhULEF4oD8dQAmgNjYc6AfdWXLTAcOStzJhfPX5cLClIlsZ6qjZcOpL/NzTai+wYSykUh1hWJyBbFuTsEfcOgfZYu4ZX3GWbDQM6ODEs0cxQdqfSwbUAHw2jLugvHlLfh+q29M/tOKNBzroIDD/cwSyspULK8j2Th7qEzjsXzPxuc0nRSw8mObWRjZzNwPatG33PCbCgLY85NeG5edFS8ONxmXvaJK+0yqbCkr4O6jvP7yjKR857g1QIDAQAB",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Squirrel",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
+  },
+  "permissions": ["nativeMessaging", "activeTab"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "squirrel@extension",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": { "required": ["none"] }
+    }
+  }
+}

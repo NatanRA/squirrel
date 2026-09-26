@@ -41,18 +41,16 @@ enum NativeMessaging {
         return registered
     }
 
-    /// Where a browser looks for native messaging hosts. Chromium browsers look in their own folder
-    /// (Opera may read Chrome's instead); Firefox in Mozilla's, and browsers built on it in their
-    /// own folder or Mozilla's, depending on the browser.
+    /// Where a browser looks for native messaging hosts. Chromium browsers may read Chrome's folder
+    /// rather than their own (Brave does, even without Chrome installed), so they get both. Firefox
+    /// reads Mozilla's, and browsers built on it their own folder or Mozilla's.
     static func hostFolders(for browser: BrowserStatus) -> [URL] {
         let hosts = "NativeMessagingHosts"
         switch browser.kind {
         case .chromium:
-            var folders = browser.dataFolder.map { [$0.appendingPathComponent(hosts, isDirectory: true)] } ?? []
-            if browser.id.hasPrefix("com.operasoftware.") {
-                folders.append(Browsers.support.appendingPathComponent("Google/Chrome/\(hosts)", isDirectory: true))
-            }
-            return folders
+            let chrome = Browsers.support.appendingPathComponent("Google/Chrome/\(hosts)", isDirectory: true)
+            let own = browser.dataFolder.map { $0.appendingPathComponent(hosts, isDirectory: true) }
+            return own == nil || own == chrome ? [chrome] : [own!, chrome]
         case .firefox:
             var folders = [Browsers.support.appendingPathComponent("Mozilla/\(hosts)", isDirectory: true)]
             if let data = browser.dataFolder, data.lastPathComponent != "Firefox" {

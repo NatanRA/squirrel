@@ -60,8 +60,10 @@ struct ContentView: View {
                 .listStyle(.inset)
             }
 
-            Divider()
-            footer
+            if store.startupError != nil || store.items.isEmpty {
+                Divider()
+                footer
+            }
         }
         .toolbar {
             ToolbarItemGroup {
@@ -109,7 +111,7 @@ struct ContentView: View {
         openSettings()
     }
 
-    /// A newer Squirrel is out: Download fetches its disk image in the browser.
+    /// A newer Squirrel is out: Squirrel installs it itself and reopens.
     private func updateBanner(_ release: AppUpdateChecker.Release) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "arrow.down.app.fill")
@@ -119,8 +121,7 @@ struct ContentView: View {
             Text("You have \(AppUpdateChecker.currentVersion).").foregroundStyle(.secondary)
             Spacer()
             Button("Not Now") { appUpdates.dismiss() }
-            Button("Download") { NSWorkspace.shared.open(release.download ?? release.page) }
-                .buttonStyle(.borderedProminent)
+            InstallUpdateButton(release: release)
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
@@ -130,10 +131,6 @@ struct ContentView: View {
         HStack {
             if let error = store.startupError {
                 Text(error).foregroundStyle(.red)
-            } else if let version = store.ytdlpVersion {
-                Text("yt-dlp \(UpdateManager.display(version)) · Saving to \(settings.downloadFolder.lastPathComponent)")
-            } else {
-                Text("Starting yt-dlp…")
             }
             Spacer()
             if store.items.isEmpty {
@@ -222,8 +219,10 @@ struct AlertMessage: Identifiable {
 // MARK: - Rows
 
 struct DownloadRow: View {
+    @Environment(DownloadStore.self) private var store
     let item: DownloadItem
     let live: LiveProgress?
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -235,8 +234,37 @@ struct DownloadRow: View {
                 status
             }
             Spacer(minLength: 0)
+            if hovering {
+                hoverAction
+            }
         }
         .padding(.vertical, 4)
+        .onHover { hovering = $0 }
+    }
+
+    /// Shown while the pointer is over the row
+    @ViewBuilder
+    private var hoverAction: some View {
+        switch item.state {
+        case .finished where item.fileURL != nil:
+            rowButton("Show in Finder", systemImage: "magnifyingglass.circle.fill") { store.reveal(item) }
+        case .queued, .extracting, .downloading, .merging:
+            rowButton("Cancel", systemImage: "xmark.circle.fill") { store.cancel(item.id) }
+        case .failed, .cancelled:
+            rowButton("Retry", systemImage: "arrow.clockwise.circle.fill") { store.retry(item.id) }
+        default:
+            EmptyView()
+        }
+    }
+
+    private func rowButton(_ label: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage).font(.title2)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help(label)
+        .accessibilityLabel(label)
     }
 
     @ViewBuilder

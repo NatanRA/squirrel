@@ -106,10 +106,19 @@ private struct AboutSettings: View {
 private struct UpdateSettings: View {
     @Environment(UpdateManager.self) private var updates
     @Environment(DownloadStore.self) private var store
+    @Environment(AppUpdateChecker.self) private var appUpdates
 
     var body: some View {
         @Bindable var updates = updates
         Form {
+            Section {
+                LabeledContent("Squirrel", value: AppUpdateChecker.currentVersion)
+                appUpdateStatus
+                Button("Check for Updates") { Task { await appUpdates.checkNow() } }
+                    .disabled(appUpdates.status == .checking)
+            } footer: {
+                Text("Squirrel also checks each time its window opens.").foregroundStyle(.secondary)
+            }
             Section {
                 LabeledContent("yt-dlp", value: updates.runningVersion.map(UpdateManager.display) ?? "…")
                 updateStatus
@@ -136,6 +145,29 @@ private struct UpdateSettings: View {
         }
         .formStyle(.grouped)
         .task { await updates.refreshStatus() }
+    }
+
+    @ViewBuilder
+    private var appUpdateStatus: some View {
+        if let release = appUpdates.newer {
+            HStack {
+                Text("Squirrel \(release.version) is available.")
+                Spacer()
+                Link("What's New", destination: release.page)
+                InstallUpdateButton(release: release)
+            }
+        } else {
+            switch appUpdates.status {
+            case .checking:
+                progress("Checking for updates…")
+            case .failed:
+                Text("Couldn't reach GitHub. Check your internet connection and try again.").foregroundStyle(.red)
+            case .idle, .upToDate:
+                Text(appUpdates.lastCheck.map { "Up to date · checked \($0.formatted(.relative(presentation: .named)))" }
+                     ?? "Not checked yet")
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     @ViewBuilder

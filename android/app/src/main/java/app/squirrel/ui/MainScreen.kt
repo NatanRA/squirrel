@@ -60,7 +60,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -86,10 +85,7 @@ import app.squirrel.data.DownloadItem
 import app.squirrel.data.DownloadState
 import app.squirrel.data.FormatChoice
 import app.squirrel.data.LiveProgress
-import app.squirrel.data.SaveLocations
-import app.squirrel.data.UpdateManager
 import app.squirrel.data.VideoInfo
-import app.squirrel.python.PythonBridge
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -111,7 +107,6 @@ fun MainScreen(
     var fetching by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf<VideoInfo?>(null) }
     var alert by remember { mutableStateOf<Pair<String, String>?>(null) }
-    val version by produceState<String?>(null) { value = runCatching { PythonBridge.version() }.getOrNull() }
 
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
@@ -217,17 +212,6 @@ fun MainScreen(
                         Text("Download")
                     }
                 }
-            }
-            item {
-                val videoPlace = SaveLocations.folder(context, isAudio = false)?.name ?: "Movies/Squirrel (Gallery)"
-                val audioPlace = SaveLocations.folder(context, isAudio = true)?.name ?: "Music/Squirrel"
-                Text(
-                    (version?.let { "yt-dlp ${UpdateManager.display(it)} · " } ?: "Starting yt-dlp… · ") +
-                        "Videos are saved to $videoPlace, audio to $audioPlace.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                )
             }
 
             if (items.isEmpty()) {

@@ -14,8 +14,16 @@ final class AppUpdateChecker {
         let download: URL?
     }
 
+    enum Status: Equatable {
+        case idle, checking, upToDate, failed
+    }
+
     /// A newer release the user hasn't dismissed
     private(set) var available: Release?
+    /// A newer release, including one the user put off
+    private(set) var newer: Release?
+    private(set) var status = Status.idle
+    private(set) var lastCheck: Date?
 
     static let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
 
@@ -29,22 +37,55 @@ final class AppUpdateChecker {
     private static let assetName = "Squirrel.ipa"
     #endif
 
+    /// When the app opens: offers a newer version unless the user chose Not Now for it.
     func check() async {
-        var request = URLRequest(url: Self.latestRelease)
+        await check(offeringDismissed: false)
+    }
+
+    /// Check for Updates: offers any newer version, including one put off with Not Now.
+    func checkNow() async {
+        await check(offeringDismissed: true)
+    }
+
+    private func check(offeringDismissed: Bool) async {
+        guard status != .checking else { return }
+        status = .checking
+        guard let release = await Self.latest() else {
+            status = .failed
+            return
+        }
+        lastCheck = .now
+        guard Self.isNewer(release.version, than: Self.currentVersion) else {
+            available = nil
+            newer = nil
+            status = .upToDate
+            return
+        }
+        newer = release
+        status = .idle
+        if offeringDismissed {
+            UserDefaults.standard.removeObject(forKey: Self.dismissedKey)
+        } else if release.version == UserDefaults.standard.string(forKey: Self.dismissedKey) {
+            return
+        }
+        available = release
+    }
+
+    /// The newest release on GitHub, or nil when it can't be reached.
+    private static func latest() async -> Release? {
+        var request = URLRequest(url: latestRelease)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let release = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tag = release["tag_name"] as? String,
-              let page = (release["html_url"] as? String).flatMap(URL.init(string:)) else { return }
+              let page = (release["html_url"] as? String).flatMap(URL.init(string:)) else { return nil }
         let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
-        guard Self.isNewer(version, than: Self.currentVersion),
-              version != UserDefaults.standard.string(forKey: Self.dismissedKey) else { return }
         let assets = release["assets"] as? [[String: Any]] ?? []
-        let download = assets.first { $0["name"] as? String == Self.assetName }
+        let download = assets.first { $0["name"] as? String == assetName }
             .flatMap { $0["browser_download_url"] as? String }
             .flatMap(URL.init(string:))
-        available = Release(version: version, page: page, download: download)
+        return Release(version: version, page: page, download: download)
     }
 
     /// Hides this version; the next one is offered again.

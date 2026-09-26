@@ -153,15 +153,16 @@ fun MainScreen(onOpenSettings: () -> Unit) {
                     }
                 }
             }
-            Text(
-                store.startupError ?: ((store.ytdlpVersion?.let { "yt-dlp ${UpdateManager.display(it)} · " } ?: "Starting yt-dlp… · ") +
-                    "Saving to ${AppSettings.downloadFolder.path}"),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (store.startupError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            store.startupError?.let { error ->
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
 
             if (store.items.isEmpty()) {
                 Column(

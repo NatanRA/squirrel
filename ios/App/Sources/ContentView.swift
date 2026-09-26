@@ -6,9 +6,6 @@ struct ContentView: View {
     @Environment(AppUpdateChecker.self) private var appUpdates
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingSettings = false
-    @AppStorage(SaveSettings.videosToPhotosKey) private var videosToPhotos = true
-    @AppStorage(SaveSettings.Kind.video.folderNameKey) private var videoFolderName: String?
-    @AppStorage(SaveSettings.Kind.audio.folderNameKey) private var audioFolderName: String?
     @State private var urlText = ""
     @State private var isFetching = false
     @State private var fetchTask: Task<Void, Never>?
@@ -42,10 +39,6 @@ struct ContentView: View {
                 } footer: {
                     if let error = store.startupError {
                         Text(error).foregroundStyle(.red)
-                    } else if let version = store.ytdlpVersion {
-                        Text("yt-dlp \(UpdateManager.display(version)) · \(savingSummary)")
-                    } else {
-                        Text("Starting yt-dlp…")
                     }
                 }
 
@@ -219,13 +212,6 @@ struct ContentView: View {
                 alert = AlertMessage(title: "Couldn’t Delete from Photos", message: error.localizedDescription)
             }
         }
-    }
-
-    /// "Videos are saved to Photos, audio to VLC."
-    private var savingSummary: String {
-        let video = videosToPhotos ? "Photos" : videoFolderName ?? "Files › Squirrel"
-        let audio = audioFolderName ?? "Files › Squirrel"
-        return video == audio ? "Files are saved to \(audio)." : "Videos are saved to \(video), audio to \(audio)."
     }
 
     private var trimmedURL: String {

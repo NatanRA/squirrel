@@ -171,12 +171,10 @@ Firefox, package and sign it with `web-ext`. See [extension/README.md](extension
 ## Releasing
 
 `./scripts/release.sh vX.Y.Z` runs on a Mac. It builds the iOS, Android and Mac apps, zips the
-extension, and publishes them all as a GitHub release. Build the Windows installer on Windows
-first and pass its path to include it:
-
-```bash
-WINDOWS_MSI=/path/to/Squirrel-1.2.3.msi ./scripts/release.sh v1.2.3
-```
+extension, and publishes them all as a GitHub release. Publishing starts the
+[Windows installer workflow](.github/workflows/windows.yml), which builds `Squirrel.msi` on
+GitHub's Windows machines and adds it to the release a few minutes later. To add it to an older
+release, run the workflow from the Actions tab with that release's tag.
 
 ## Using it
 

@@ -1,8 +1,9 @@
 #!/bin/bash
 # Build the apps and publish them as a GitHub release (run on a Mac):
 #   ./scripts/release.sh v1.1.0
-#   WINDOWS_MSI=path/to/Squirrel-1.1.0.msi ./scripts/release.sh v1.1.0
-# The Windows installer has to be built on Windows (see README), so it's passed in.
+# The Windows installer can only be packaged on Windows: publishing the release starts
+# .github/workflows/windows.yml, which builds Squirrel.msi and adds it a few minutes later.
+# To attach one built yourself instead: WINDOWS_MSI=path/to/Squirrel.msi ./scripts/release.sh v1.1.0
 # The README's download links point at releases/latest, so they follow automatically.
 set -euo pipefail
 
@@ -28,7 +29,7 @@ cp "desktop/build/Squirrel-macos-$(uname -m).dmg" "$OUT/"
 if [ -n "${WINDOWS_MSI:-}" ]; then
     cp "$WINDOWS_MSI" "$OUT/Squirrel.msi"
 else
-    echo "warning: WINDOWS_MSI not set; the release won't include the Windows installer" >&2
+    echo "The Windows installer is added by GitHub Actions (.github/workflows/windows.yml)"
 fi
 
 # The extension ships as source; stamp the version into its manifest

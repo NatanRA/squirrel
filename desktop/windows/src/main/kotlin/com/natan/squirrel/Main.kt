@@ -1,5 +1,10 @@
 package com.natan.squirrel
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -11,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.natan.squirrel.ui.LaunchSplash
 import com.natan.squirrel.ui.MainScreen
 import com.natan.squirrel.ui.SettingsScreen
 import com.natan.squirrel.ui.SquirrelTheme
@@ -40,9 +46,15 @@ fun main() {
                 UpdateManager.refreshStatus()
                 UpdateManager.autoUpdateIfDue()
             }
+            var splash by remember { mutableStateOf(true) }
             SquirrelTheme {
-                if (settings) SettingsScreen(version, onBack = { settings = false })
-                else MainScreen(onOpenSettings = { settings = true })
+                Box {
+                    if (settings) SettingsScreen(version, onBack = { settings = false })
+                    else MainScreen(onOpenSettings = { settings = true })
+                    AnimatedVisibility(splash, enter = EnterTransition.None, exit = fadeOut(tween(250))) {
+                        LaunchSplash(animate = true) { splash = false }
+                    }
+                }
             }
         }
     }

@@ -187,7 +187,7 @@ WINDOWS_MSI=/path/to/Squirrel-1.2.3.msi ./scripts/release.sh v1.2.3
   On a phone, **Delete** also removes the file from Photos or the Gallery (iOS asks you to
   confirm); on iOS, **Remove from List** keeps the video in Photos. On a computer, double-click to
   open, or right-click for **Show in Finder/Folder** and more.
-- **Browser extension:** click the acorn, check the link (it starts with the page you're on),
+- **Browser extension:** click the squirrel, check the link (it starts with the page you're on),
   pick a format, and the file is saved to the desktop app's download folder. Downloads keep going
   after the popup closes.
 - **Settings › Accounts (phones):** **Sign In to a Site** opens an in-app browser. Log in and tap

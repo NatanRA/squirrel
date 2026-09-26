@@ -1,11 +1,10 @@
-"""Render every app icon from branding/icon.svg and branding/mark.svg.
+"""Render every app icon from branding/icon.svg.
 
     pip install cairosvg pillow
-    python3 branding/render_icons.py
+    python3 branding/squirrel.py && python3 branding/render_icons.py
 
-The Android icon is a vector drawable that reuses mark.svg's paths directly
-(android/app/src/main/res/drawable/ic_launcher_foreground.xml), so update both
-if the mark changes.
+squirrel.py draws the squirrel and writes icon.svg, mark.svg and Android's vector icons
+(which use mark.svg's paths directly); this script turns icon.svg into the bitmap icons.
 """
 import io
 import os
@@ -20,13 +19,16 @@ ICON = open(os.path.join(HERE, 'icon.svg')).read()
 
 
 def rounded(svg, radius, inset=0):
-    """The square icon clipped to a rounded square, `inset` px in from each edge (1024 grid)."""
+    """The square icon clipped to a rounded square, `inset` px in from each edge (1024 grid).
+    A faint edge keeps the light background from fading into white windows and toolbars."""
     size = 1024 - 2 * inset
     scale = size / 1024
     body = svg.split('>', 1)[1].rsplit('</svg>', 1)[0]
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">'
             f'<defs><clipPath id="r"><rect x="{inset}" y="{inset}" width="{size}" height="{size}" rx="{radius}"/></clipPath></defs>'
-            f'<g clip-path="url(#r)"><g transform="translate({inset} {inset}) scale({scale})">{body}</g></g></svg>')
+            f'<g clip-path="url(#r)"><g transform="translate({inset} {inset}) scale({scale})">{body}</g></g>'
+            f'<rect x="{inset + 4}" y="{inset + 4}" width="{size - 8}" height="{size - 8}" rx="{radius - 4}" '
+            f'fill="none" stroke="#E4C4AE" stroke-width="8"/></svg>')
 
 
 def png(svg, size, flatten=False):

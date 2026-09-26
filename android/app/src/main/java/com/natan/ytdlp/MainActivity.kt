@@ -3,17 +3,25 @@ package com.natan.ytdlp
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.natan.ytdlp.data.AutoPaste
 import com.natan.ytdlp.ui.AdvancedScreen
+import com.natan.ytdlp.ui.LaunchSplash
 import com.natan.ytdlp.ui.LoginSite
 import com.natan.ytdlp.ui.MainScreen
 import com.natan.ytdlp.ui.SettingsScreen
@@ -34,12 +42,21 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) handle(intent)
+        // Off when the system's animations are turned off (Settings › Accessibility)
+        val animate = Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
         setContent {
             SquirrelTheme {
-                SquirrelApp(
-                    sharedUrl = sharedUrl.value, onSharedUrlConsumed = { sharedUrl.value = null },
-                    pastedUrl = pastedUrl.value, onPastedUrlConsumed = { pastedUrl.value = null },
-                )
+                // Saved, so it plays once per launch rather than on every rotation
+                var splash by rememberSaveable { mutableStateOf(true) }
+                Box {
+                    SquirrelApp(
+                        sharedUrl = sharedUrl.value, onSharedUrlConsumed = { sharedUrl.value = null },
+                        pastedUrl = pastedUrl.value, onPastedUrlConsumed = { pastedUrl.value = null },
+                    )
+                    AnimatedVisibility(splash, enter = EnterTransition.None, exit = fadeOut(tween(250))) {
+                        LaunchSplash(animate) { splash = false }
+                    }
+                }
             }
         }
     }

@@ -31,11 +31,11 @@ def _load():
         path = os.environ.get('SQUIRREL_REMUX_LIB') or os.path.join(_RUNTIME, 'remux', _LIBRARY)
         lib = ctypes.CDLL(path)
         strings, text, size = ctypes.POINTER(ctypes.c_char_p), ctypes.c_char_p, ctypes.c_size_t
-        lib.ytdl_remux_subtitled.argtypes = [
-            strings, ctypes.c_int, strings, strings, strings, ctypes.c_int, text, text,
-            strings, ctypes.c_int, text, size]
-        lib.ytdl_remux_subtitled.restype = ctypes.c_int
-        lib.ytdl_convert_to_mp3.argtypes = [text, text, strings, ctypes.c_int, text, size]
+        lib.ytdl_remux_full.argtypes = [
+            strings, ctypes.c_int, strings, strings, strings, ctypes.c_int, strings, ctypes.c_int, text,
+            text, text, strings, ctypes.c_int, text, size]
+        lib.ytdl_remux_full.restype = ctypes.c_int
+        lib.ytdl_convert_to_mp3.argtypes = [text, text, strings, ctypes.c_int, text, strings, ctypes.c_int, text, size]
         lib.ytdl_convert_to_mp3.restype = ctypes.c_int
         _lib = lib
     return _lib
@@ -55,36 +55,48 @@ def _tags(metadata):
     return _strings(tags), len(tags) // 2
 
 
-def remux(inputs, output, metadata=None, subtitles=()):
+def _chapters(chapters):
+    """Start, end and title for each chapter, as Remux.c takes them."""
+    flat = [x for c in chapters or () for x in (repr(float(c['start'])), repr(float(c['end'])), c.get('title') or '')]
+    return _strings(flat), len(flat) // 3
+
+
+def remux(inputs, output, metadata=None, subtitles=(), chapters=(), cover=None):
     """Merge/rewrap ``inputs`` into ``output``; the extension picks the container.
 
     ``subtitles``: dicts with ``path``, and optionally ``lang`` (ISO 639-2) and ``name``.
+    ``chapters``: dicts with ``start``, ``end`` (seconds) and ``title``. ``cover``: a JPEG
+    or PNG for audio files' artwork.
     """
     muxer = MUXERS.get(os.path.splitext(output)[1][1:].lower())
     if not muxer:
         raise RuntimeError(f"Can't write {os.path.splitext(output)[1]} files")
     lib = _load()
     tags, tag_count = _tags(metadata)
+    marks, mark_count = _chapters(chapters)
     error = ctypes.create_string_buffer(512)
-    status = lib.ytdl_remux_subtitled(
+    status = lib.ytdl_remux_full(
         _strings([_path(p) for p in inputs]), len(inputs),
         _strings([_path(s['path']) for s in subtitles]), _strings([s.get('lang') for s in subtitles]),
-        _strings([s.get('name') for s in subtitles]), len(subtitles),
-        _path(output), muxer.encode(), tags, tag_count, error, len(error))
+        _strings([s.get('name') for s in subtitles]), len(subtitles), marks, mark_count,
+        _path(cover) if cover else None, _path(output), muxer.encode(), tags, tag_count, error, len(error))
     if status != 0:
         raise RuntimeError(f"Couldn't finish the file: {error.value.decode(errors='replace')}")
 
 
-def convert_to_mp3(source, output, metadata=None):
+def convert_to_mp3(source, output, metadata=None, chapters=(), cover=None):
     lib = _load()
     tags, tag_count = _tags(metadata)
+    marks, mark_count = _chapters(chapters)
     error = ctypes.create_string_buffer(512)
-    status = lib.ytdl_convert_to_mp3(_path(source), _path(output), tags, tag_count, error, len(error))
+    status = lib.ytdl_convert_to_mp3(_path(source), _path(output), marks, mark_count,
+                                     _path(cover) if cover else None, tags, tag_count, error, len(error))
     if status != 0:
         raise RuntimeError(f"Couldn't make the MP3: {error.value.decode(errors='replace')}")
 
 
-def finish(files, out_dir, title, ext=None, audio=False, metadata=None, subtitles=(), convert=None):
+def finish(files, out_dir, title, ext=None, audio=False, metadata=None, subtitles=(), convert=None,
+           chapters=(), cover=None):
     """Turn yt-dlp's downloaded parts into one file in ``out_dir``; returns its path.
 
     ``convert='mp3'`` re-encodes a single audio download as MP3 instead of rewrapping it.
@@ -95,7 +107,7 @@ def finish(files, out_dir, title, ext=None, audio=False, metadata=None, subtitle
     if convert == 'mp3':
         destination = unique_path(out_dir, title, 'mp3')
         try:
-            convert_to_mp3(files[0], destination, metadata)
+            convert_to_mp3(files[0], destination, metadata, chapters, cover)
         except Exception:
             _remove(destination)
             raise
@@ -103,7 +115,7 @@ def finish(files, out_dir, title, ext=None, audio=False, metadata=None, subtitle
     container = ext if ext and ext.lower() in MUXERS else ('m4a' if audio else 'mp4')
     destination = unique_path(out_dir, title, container)
     try:
-        remux(files, destination, metadata, subtitles)
+        remux(files, destination, metadata, subtitles, chapters, cover)
     except Exception:
         _remove(destination)  # the name unique_path reserved
         if len(files) != 1:

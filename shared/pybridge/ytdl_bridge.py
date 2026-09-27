@@ -579,6 +579,55 @@ def _write_subtitles(ydl, raw, keys, logger):
 # endregion
 
 
+# region: chapters and artwork
+
+def _chapters(info):
+    """The video's chapters for Remux.c: start and end in seconds, and title."""
+    chapters = []
+    for chapter in info.get('chapters') or []:
+        start, end = chapter.get('start_time'), chapter.get('end_time')
+        if start is not None and end is not None and end > start:
+            chapters.append({'start': start, 'end': end, 'title': chapter.get('title') or ''})
+    return chapters
+
+
+def _is_audio(fmt):
+    """A format without a picture (yt-dlp says 'none' for sure, None for unknown)."""
+    return fmt.get('vcodec') == 'none' or (
+        fmt.get('vcodec') is None and not fmt.get('height') and fmt.get('acodec') not in (None, 'none'))
+
+
+_COVER_EXTENSIONS = ('.jpg', '.jpeg', '.png')
+
+
+def _fetch_cover(ydl, info, out_dir, logger):
+    """The video's biggest JPEG or PNG thumbnail as a file, for an audio file's artwork;
+    Remux.c copies it in as it is, so WebP (which players don't all show) is left out."""
+    thumbnails = [t for t in info.get('thumbnails') or [] if t.get('url')]
+    if not thumbnails and info.get('thumbnail'):
+        thumbnails = [{'url': info['thumbnail']}]
+    usable = [t for t in thumbnails
+              if urllib.parse.urlparse(t['url']).path.lower().endswith(_COVER_EXTENSIONS)]
+    usable.sort(key=lambda t: (t.get('preference') or 0, (t.get('width') or 0) * (t.get('height') or 0)),
+                reverse=True)
+    for thumbnail in usable[:3]:  # the biggest often doesn't exist (e.g. YouTube's maxresdefault)
+        try:
+            with ydl.urlopen(thumbnail['url']) as response:
+                data = response.read(10 << 20)
+        except Exception as e:
+            logger.debug(f'[debug] No artwork from {thumbnail["url"]}: {e}')
+            continue
+        ext = 'png' if data.startswith(b'\x89PNG') else 'jpg' if data.startswith(b'\xff\xd8') else None
+        if ext:
+            path = os.path.join(out_dir, f'cover.{ext}')
+            with open(path, 'wb') as f:
+                f.write(data)
+            return path
+    return None
+
+# endregion
+
+
 # region: playlists
 
 PLAYLIST_CAP = 500
@@ -819,6 +868,7 @@ def download(arg: str) -> str:
 
     def run(ydl):
         job['status'] = 'extracting'
+        downloaded.clear()  # a retry starts over
         raw = ydl.extract_info(params['url'], download=False, process=False)
         if raw.get('_type') in ('playlist', 'multi_video'):
             index = params.get('playlist_index')
@@ -855,7 +905,8 @@ def download(arg: str) -> str:
                 artist=result.get('artist') or ', '.join(result.get('artists') or [])
                 or result.get('uploader') or result.get('channel'),
                 date=(result.get('release_date') or result.get('upload_date') or '')[:4],
-                url=result.get('webpage_url'))
+                url=result.get('webpage_url'), chapters=_chapters(result))
+            downloaded.extend(result.get('requested_downloads') or [result])
             if len(files) == before:
                 # Already-downloaded files don't fire a "finished" hook
                 path = (result.get('requested_downloads') or [{}])[0].get('filepath')
@@ -869,11 +920,17 @@ def download(arg: str) -> str:
             if keys:
                 job['status'] = 'subtitles'
                 subtitles[:] = _write_subtitles(ydl, raw, keys, logger)
+        # Music apps show artwork for audio files; videos have their own pictures
+        audio = chosen.get('kind') == 'audio' if chosen else all(map(_is_audio, downloaded))
+        if audio and not job['cancel']:
+            cover[:] = [_fetch_cover(ydl, raw, out_dir, logger)]
         return raw
 
     processed = {}
     chosen = {}  # the preset a target resolved to
     subtitles = []
+    downloaded = []  # the formats downloaded, as yt-dlp describes them
+    cover = [None]
 
     def remove_files():
         for f in files:
@@ -899,7 +956,7 @@ def download(arg: str) -> str:
             return _ok(files=files, title=processed.get('title') or raw.get('title'),
                        id=processed.get('id') or raw.get('id'), key=_key(raw), artist=processed.get('artist'),
                        date=processed.get('date'), url=processed.get('url'), choice=chosen or None,
-                       subtitles=subtitles)
+                       subtitles=subtitles, chapters=processed.get('chapters') or [], cover=cover[0])
     except Exception as e:
         if isinstance(e, Cancelled) or job['cancel']:
             job['status'] = 'cancelled'

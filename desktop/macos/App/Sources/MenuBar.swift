@@ -66,8 +66,17 @@ struct MenuBarPanel: View {
     @State private var isFetching = false
     @State private var error: String?
 
+    /// Running downloads, then waiting ones, then the latest finished: a few of each, since a
+    /// playlist can queue hundreds
     private var recent: [DownloadItem] {
-        Array(store.items.filter(\.state.isActive) + store.items.filter { !$0.state.isActive }.prefix(4))
+        let running = store.items.filter { $0.state.isActive && $0.state != .queued }
+        let waiting = store.items.filter { $0.state == .queued }
+        return Array((running + waiting).prefix(5) + store.items.filter { !$0.state.isActive }.prefix(4))
+    }
+
+    private var hiddenWaiting: Int {
+        let shown = recent.count { $0.state == .queued }
+        return store.waitingCount - shown
     }
 
     var body: some View {
@@ -109,6 +118,12 @@ struct MenuBarPanel: View {
                 ForEach(recent) { item in
                     MenuBarDownloadRow(item: item, live: store.live[item.id])
                 }
+                if hiddenWaiting > 0 {
+                    Text("\(hiddenWaiting) more waiting").font(.caption).foregroundStyle(.secondary)
+                }
+                if store.paused, store.waitingCount > 0 {
+                    Button("Resume Downloads") { store.resume() }
+                }
             }
 
             Divider()
@@ -141,6 +156,11 @@ struct MenuBarPanel: View {
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .help("Cancel")
+            }
+            if let playlistURL = info.playlistURL {
+                Button("Choose from the whole playlist…") { fetch(playlistURL) }
+                    .buttonStyle(.link)
+                    .font(.caption)
             }
             ScrollView {
                 VStack(spacing: 0) {
@@ -175,14 +195,25 @@ struct MenuBarPanel: View {
     }
 
     private func fetch() {
-        let url = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        fetch(link.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private func fetch(_ url: String) {
         guard !url.isEmpty, !isFetching else { return }
         isFetching = true
         error = nil
         Task {
             defer { isFetching = false }
             do {
-                info = try await store.fetchInfo(url)
+                switch try await store.fetch(url) {
+                case .video(let video):
+                    info = video
+                case .playlist(let playlist):
+                    // Too many videos for this panel: choose them in the main window
+                    info = nil
+                    link = ""
+                    LinkInbox.shared.show(playlist)
+                }
             } catch {
                 self.error = error.localizedDescription
             }
@@ -231,7 +262,9 @@ private struct MenuBarDownloadRow: View {
         switch item.state {
         case .downloading:
             ProgressView(value: live?.fraction ?? 0).controlSize(.small)
-        case .queued, .extracting:
+        case .queued:
+            caption("Waiting…")
+        case .extracting:
             caption("Preparing…")
         case .merging:
             caption("Finishing…")

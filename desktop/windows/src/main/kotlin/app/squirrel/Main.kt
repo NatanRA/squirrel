@@ -24,14 +24,17 @@ import app.squirrel.ui.SquirrelTheme
 import javax.swing.UIManager
 import kotlin.system.exitProcess
 
-fun main() {
-    // Already running, perhaps in the background: that copy shows its window instead
-    if (!SingleInstance.claim()) exitProcess(0)
+fun main(args: Array<String>) {
+    // Squirrel.exe --open <link>: the browser extension handing over a link (squirrel_host.py)
+    val link = args.indexOf("--open").takeIf { it >= 0 }?.let { args.getOrNull(it + 1) }
+    // Already running, perhaps in the background: that copy shows its window (and the link) instead
+    if (!SingleInstance.claim(link)) exitProcess(0)
     // Native look for the folder picker
     runCatching { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()) }
     AppSettings.load()
     DownloadStore.load()
     NativeMessaging.register()
+    link?.let(Background::open)
 
     // Set by the packaged app (jpackage); "dev" when run from Gradle
     val version = System.getProperty("jpackage.app-version") ?: "dev"
@@ -68,6 +71,10 @@ fun main() {
                 }
             }
             var settings by remember { mutableStateOf(false) }
+            // A link from the browser extension shows on the main screen
+            LaunchedEffect(Background.pendingLink) {
+                if (Background.pendingLink != null) settings = false
+            }
             LaunchedEffect(Unit) {
                 DownloadStore.start()
                 AppUpdater.check()

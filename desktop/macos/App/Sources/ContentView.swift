@@ -11,7 +11,7 @@ struct ContentView: View {
     @AppStorage(SettingsView.tabKey) private var settingsTab = "general"
     @State private var urlText = ""
     @State private var isFetching = false
-    @State private var info: VideoInfo?
+    @State private var fetched: FetchResult?
     @State private var alert: AlertMessage?
     @FocusState private var fieldFocused: Bool
 
@@ -38,6 +38,10 @@ struct ContentView: View {
 
             if let release = appUpdates.available {
                 updateBanner(release)
+            }
+
+            if store.paused, store.waitingCount > 0 {
+                pausedBanner
             }
 
             Divider()
@@ -96,15 +100,34 @@ struct ContentView: View {
         .onChange(of: inbox.pending, initial: true) { _, link in
             guard let link else { return }
             inbox.pending = nil
-            info = nil
+            fetched = nil
             urlText = link
             fetch()
         }
-        .sheet(item: $info) { info in
-            FormatPicker(info: info) { choice in
-                store.download(info, choice: choice)
-                self.info = nil
-                urlText = ""
+        // A playlist opened from the menu bar
+        .onChange(of: inbox.pendingPlaylist?.id, initial: true) {
+            guard let playlist = inbox.pendingPlaylist else { return }
+            inbox.pendingPlaylist = nil
+            fetched = .playlist(playlist)
+        }
+        .sheet(item: $fetched) { result in
+            switch result {
+            case .video(let info):
+                FormatPicker(info: info) { choice in
+                    store.download(info, choice: choice)
+                    fetched = nil
+                    urlText = ""
+                } onWholePlaylist: { url in
+                    fetched = nil
+                    urlText = url
+                    fetch()
+                }
+            case .playlist(let playlist):
+                PlaylistSheet(playlist: playlist) { entries, target in
+                    store.download(entries, from: playlist, target: target)
+                    fetched = nil
+                    urlText = ""
+                }
             }
         }
         .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
@@ -113,6 +136,23 @@ struct ContentView: View {
     private func showSettings(tab: String) {
         settingsTab = tab
         openSettings()
+    }
+
+    /// Downloads left waiting when Squirrel last quit don't start by surprise.
+    private var pausedBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "pause.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.tint)
+            Text(store.waitingCount == 1 ? "1 download is waiting." : "\(store.waitingCount) downloads are waiting.")
+                .fontWeight(.medium)
+            Spacer()
+            Button("Cancel All") { store.cancelWaiting() }
+            Button("Resume") { store.resume() }
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 10)
     }
 
     /// A newer Squirrel is out: Squirrel installs it itself and reopens.
@@ -157,6 +197,9 @@ struct ContentView: View {
         }
         if item.state.isActive {
             Button("Cancel") { store.cancel(item.id) }
+            if let playlist = item.playlist {
+                Button("Cancel the Rest of “\(playlist.title)”") { store.cancelRest(of: item) }
+            }
         }
         if case .failed(let message) = item.state {
             Button("Show Error") { alert = AlertMessage(title: "Download Failed", message: message) }
@@ -198,7 +241,7 @@ struct ContentView: View {
         Task {
             defer { isFetching = false }
             do {
-                info = try await store.fetchInfo(url)
+                fetched = try await store.fetch(url)
             } catch {
                 alert = AlertMessage(title: "Couldn’t Load Link", message: error.localizedDescription)
             }
@@ -235,6 +278,10 @@ struct DownloadRow: View {
                 Text(item.title)
                     .fontWeight(.medium)
                     .lineLimit(2)
+                if let playlist = item.playlist {
+                    caption("\(playlist.title) · \(playlist.index) of \(playlist.count)")
+                        .lineLimit(1)
+                }
                 status
             }
             Spacer(minLength: 0)
@@ -308,6 +355,7 @@ struct DownloadRow: View {
 struct Thumbnail: View {
     let url: URL?
     let isAudio: Bool
+    var width: CGFloat = 96
 
     var body: some View {
         AsyncImage(url: url) { image in
@@ -319,7 +367,7 @@ struct Thumbnail: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(width: 96, height: 54)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .frame(width: width, height: width * 9 / 16)
+        .clipShape(RoundedRectangle(cornerRadius: width < 80 ? 4 : 6))
     }
 }

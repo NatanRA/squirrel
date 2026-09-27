@@ -7,11 +7,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -24,24 +26,47 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.squirrel.DownloadItem
+import app.squirrel.DownloadStore
 import app.squirrel.FormatChoice
 import app.squirrel.VideoInfo
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
+/**
+ * The video's download choices. [downloaded] is an earlier download of it whose file is still
+ * there; [onWholePlaylist] opens the playlist the link also names.
+ */
 @Composable
-fun FormatDialog(info: VideoInfo, onDismiss: () -> Unit, onPick: (FormatChoice) -> Unit) {
+fun FormatDialog(
+    info: VideoInfo,
+    downloaded: DownloadItem?,
+    onDismiss: () -> Unit,
+    onWholePlaylist: (String) -> Unit,
+    onPick: (FormatChoice) -> Unit,
+) {
     val video = info.choices.filter { !it.isAudio }
     val audio = info.choices.filter { it.isAudio }
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = {
+            Row {
+                info.playlistUrl?.let { url ->
+                    TextButton(onClick = { onWholePlaylist(url) }) { Text("Whole Playlist…") }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        },
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Thumbnail(info.thumbnail, video.isEmpty(), width = 112, height = 63)
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(info.title, style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    val meta = listOfNotNull(info.uploader, info.duration?.let(::duration)).joinToString(" · ")
+                    val meta = listOfNotNull(info.uploader, info.duration?.let(::formatDuration)).joinToString(" · ")
                     if (meta.isNotEmpty()) {
                         Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -49,18 +74,36 @@ fun FormatDialog(info: VideoInfo, onDismiss: () -> Unit, onPick: (FormatChoice) 
             }
         },
         text = {
-            LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                if (video.isNotEmpty()) {
-                    item { SectionTitle("Video") }
-                    items(video) { Choice(it, onPick) }
-                }
-                if (audio.isNotEmpty()) {
-                    item { SectionTitle("Audio Only") }
-                    items(audio) { Choice(it, onPick) }
+            Column {
+                downloaded?.let { DownloadedNotice(it) }
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    if (video.isNotEmpty()) {
+                        item { SectionTitle("Video") }
+                        items(video) { Choice(it, onPick) }
+                    }
+                    if (audio.isNotEmpty()) {
+                        item { SectionTitle("Audio Only") }
+                        items(audio) { Choice(it, onPick) }
+                    }
                 }
             }
         },
     )
+}
+
+/** "Downloaded Sep 27, 2026": downloading it again is still allowed. */
+@Composable
+private fun DownloadedNotice(item: DownloadItem) {
+    val date = Instant.ofEpochMilli(item.createdAt).atZone(ZoneId.systemDefault())
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Default.CheckCircle, null, Modifier.size(18.dp), tint = DoneColor)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "Downloaded ${DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).format(date)}",
+            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = { DownloadStore.reveal(item) }) { Text("Show in Folder") }
+    }
 }
 
 @Composable
@@ -90,10 +133,4 @@ private fun Choice(choice: FormatChoice, onPick: (FormatChoice) -> Unit) {
             )
         }
     }
-}
-
-private fun duration(seconds: Double): String {
-    val total = seconds.toInt()
-    val (h, m, s) = Triple(total / 3600, total / 60 % 60, total % 60)
-    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }

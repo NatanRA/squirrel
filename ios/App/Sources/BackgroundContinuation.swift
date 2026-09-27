@@ -4,38 +4,47 @@ import UIKit
 
 private let log = Logger(subsystem: "app.squirrel", category: "background")
 
-/// Keeps one download running after the user leaves the app.
+/// Keeps the download queue running after the user leaves the app.
 ///
 /// On iOS 26+ this submits a `BGContinuedProcessingTask`, which lets the work
 /// continue in the background while the system shows its progress. Earlier
 /// versions only get the ~30 s grace period of a UIKit background task.
+/// iOS only accepts either while the app is open, so one is started from the
+/// user's own actions and covers every download until the queue runs out.
 @MainActor
 final class BackgroundContinuation {
-    private let title: String
     private let onExpire: @MainActor () -> Void
     private var systemTask: BGTask?
     private var legacyTask: UIBackgroundTaskIdentifier = .invalid
     private var isFinished = false
-    private var fraction: Double = 0
-    private var subtitle = "Starting…"
+    private var title: String
+    private var subtitle: String
+    private var fraction: Double
 
-    init(title: String, onExpire: @escaping @MainActor () -> Void) {
+    init(title: String, subtitle: String, fraction: Double, onExpire: @escaping @MainActor () -> Void) {
         self.title = title
+        self.subtitle = subtitle
+        self.fraction = fraction
         self.onExpire = onExpire
-        legacyTask = UIApplication.shared.beginBackgroundTask(withName: "download") { [weak self] in
-            MainActor.assumeIsolated { self?.endLegacyTask() }
-        }
+        beginLegacyTask()
         if #available(iOS 26, *) {
             submitContinuedProcessingTask()
         }
     }
 
-    func update(fraction: Double?, subtitle: String) {
-        if let fraction { self.fraction = fraction }
+    func update(title: String, subtitle: String, fraction: Double) {
+        self.title = title
         self.subtitle = subtitle
+        self.fraction = fraction
         guard #available(iOS 26, *), let task = systemTask as? BGContinuedProcessingTask else { return }
-        task.progress.completedUnitCount = Int64(self.fraction * 1000)
+        task.progress.completedUnitCount = Int64(fraction * 1000)
         task.updateTitle(title, subtitle: subtitle)
+    }
+
+    /// More downloads were started in the app: a new grace period if the last one ran out.
+    func renew() {
+        guard !isFinished, legacyTask == .invalid else { return }
+        beginLegacyTask()
     }
 
     func finish(success: Bool) {
@@ -43,6 +52,12 @@ final class BackgroundContinuation {
         systemTask?.setTaskCompleted(success: success)
         systemTask = nil
         endLegacyTask()
+    }
+
+    private func beginLegacyTask() {
+        legacyTask = UIApplication.shared.beginBackgroundTask(withName: "download") { [weak self] in
+            MainActor.assumeIsolated { self?.endLegacyTask() }
+        }
     }
 
     private func endLegacyTask() {

@@ -2,7 +2,11 @@ import SwiftUI
 
 struct FormatPicker: View {
     let info: VideoInfo
+    /// An earlier download of this video that's still where it was saved
+    var downloaded: DownloadItem?
     let onPick: (FormatChoice) -> Void
+    /// Opens the playlist the link also names (`info.playlistURL`)
+    var onWholePlaylist: ((String) -> Void)?
     @Environment(\.dismiss) private var dismiss
 
     private var videoChoices: [FormatChoice] { info.choices.filter { !$0.isAudio } }
@@ -30,13 +34,31 @@ struct FormatPicker: View {
                             Text(info.title)
                                 .font(.subheadline.weight(.semibold))
                                 .lineLimit(3)
-                            Text([info.uploader, info.duration.map(Self.format)].compactMap { $0 }.joined(separator: " · "))
+                            Text([info.uploader, info.duration.map(formatDuration)].compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if let downloaded {
+                                Label {
+                                    Text("Downloaded \(downloaded.createdAt.formatted(date: .abbreviated, time: .omitted))")
+                                } icon: {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                }
+                                .font(.caption)
+                            }
                         }
                     }
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                     .listRowBackground(Color.clear)
+                }
+
+                if let url = info.playlistURL, let onWholePlaylist {
+                    Section {
+                        Button { onWholePlaylist(url) } label: {
+                            Label("Whole Playlist…", systemImage: "list.bullet")
+                        }
+                    } footer: {
+                        Text("Choose videos from the playlist this link is part of.")
+                    }
                 }
 
                 if !videoChoices.isEmpty {
@@ -72,11 +94,5 @@ struct FormatPicker: View {
                 Image(systemName: "arrow.down.circle").foregroundStyle(.tint)
             }
         }
-    }
-
-    private static func format(_ seconds: Double) -> String {
-        let total = Int(seconds)
-        let (h, m, s) = (total / 3600, total / 60 % 60, total % 60)
-        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 }

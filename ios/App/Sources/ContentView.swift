@@ -9,7 +9,7 @@ struct ContentView: View {
     @State private var urlText = ""
     @State private var isFetching = false
     @State private var fetchTask: Task<Void, Never>?
-    @State private var info: VideoInfo?
+    @State private var fetched: FetchResult?
     @State private var alert: AlertMessage?
     @State private var previewURL: URL?
     @FocusState private var fieldFocused: Bool
@@ -19,6 +19,9 @@ struct ContentView: View {
             List {
                 if let release = appUpdates.available {
                     updateBanner(release)
+                }
+                if store.paused, store.waitingCount > 0 {
+                    pausedBanner
                 }
                 Section {
                     inputRow
@@ -81,11 +84,24 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showingSettings) { SettingsView() }
             .scrollDismissesKeyboard(.immediately)
-            .sheet(item: $info) { info in
-                FormatPicker(info: info) { choice in
-                    store.download(info, choice: choice)
-                    self.info = nil
-                    urlText = ""
+            .sheet(item: $fetched) { result in
+                switch result {
+                case .video(let info):
+                    FormatPicker(info: info, downloaded: store.downloaded(key: info.key, url: info.url)) { choice in
+                        store.download(info, choice: choice)
+                        fetched = nil
+                        urlText = ""
+                    } onWholePlaylist: { url in
+                        fetched = nil
+                        urlText = url
+                        fetch()
+                    }
+                case .playlist(let playlist):
+                    PlaylistSheet(playlist: playlist) { entries, target in
+                        store.download(entries, from: playlist, target: target)
+                        fetched = nil
+                        urlText = ""
+                    }
                 }
             }
             .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
@@ -93,6 +109,27 @@ struct ContentView: View {
             .onOpenURL(perform: handleOpenURL)
             .onChange(of: scenePhase, initial: true) { _, phase in
                 if phase == .active { autoPaste() }
+            }
+        }
+    }
+
+    /// Downloads left waiting when Squirrel was last closed (or that iOS stopped in the
+    /// background) don't start by surprise.
+    private var pausedBanner: some View {
+        Section {
+            HStack(spacing: 12) {
+                Image(systemName: "pause.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.tint)
+                Text(store.waitingCount == 1 ? "1 download is waiting." : "\(store.waitingCount) downloads are waiting.")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button("Cancel All") { store.cancelWaiting() }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                Button("Resume") { store.resume() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
             }
         }
     }
@@ -174,6 +211,11 @@ struct ContentView: View {
         }
         if item.state.isActive {
             Button { store.cancel(item.id) } label: { Label("Cancel", systemImage: "stop.circle") }
+            if let playlist = item.playlist {
+                Button { store.cancelRest(of: item) } label: {
+                    Label("Cancel the Rest of “\(playlist.title)”", systemImage: "stop.circle")
+                }
+            }
         }
         if case .failed = item.state {
             Button { store.retry(item.id) } label: { Label("Retry", systemImage: "arrow.clockwise") }
@@ -227,9 +269,9 @@ struct ContentView: View {
         isFetching = true
         fetchTask = Task {
             do {
-                let result = try await store.fetchInfo(url)
+                let result = try await store.fetch(url)
                 guard !Task.isCancelled else { return }
-                info = result
+                fetched = result
             } catch {
                 guard !Task.isCancelled else { return }
                 alert = AlertMessage(title: "Couldn’t Load Link", message: error.localizedDescription)
@@ -250,7 +292,7 @@ struct ContentView: View {
 
     /// Nothing is in progress that an auto-pasted link would interrupt.
     private var isIdle: Bool {
-        urlText.isEmpty && !isFetching && info == nil && !showingSettings && previewURL == nil && alert == nil
+        urlText.isEmpty && !isFetching && fetched == nil && !showingSettings && previewURL == nil && alert == nil
     }
 
     private func open(_ item: DownloadItem) {
@@ -299,6 +341,10 @@ struct DownloadRow: View {
                 Text(item.title)
                     .font(.subheadline.weight(.medium))
                     .lineLimit(2)
+                if let playlist = item.playlist {
+                    caption("\(playlist.title) · \(playlist.index) of \(playlist.count)")
+                        .lineLimit(1)
+                }
                 status
             }
         }
@@ -358,6 +404,7 @@ struct DownloadRow: View {
 struct Thumbnail: View {
     let url: URL?
     let isAudio: Bool
+    var width: CGFloat = 80
 
     var body: some View {
         AsyncImage(url: url) { image in
@@ -369,8 +416,8 @@ struct Thumbnail: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(width: 80, height: 45)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .frame(width: width, height: width * 9 / 16)
+        .clipShape(RoundedRectangle(cornerRadius: width < 80 ? 4 : 6))
         .overlay(alignment: .bottomTrailing) {
             if isAudio, url != nil {
                 Image(systemName: "music.note")

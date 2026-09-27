@@ -56,6 +56,7 @@ fun SettingsScreen(appVersion: String, onBack: () -> Unit) {
     val updates = UpdateManager
     val scope = rememberCoroutineScope()
     var browserMenu by remember { mutableStateOf(false) }
+    var limitMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { updates.refreshStatus() }
 
@@ -72,6 +73,30 @@ fun SettingsScreen(appVersion: String, onBack: () -> Unit) {
                 headlineContent = { Text("Save to") },
                 supportingContent = { Text(AppSettings.downloadFolder.path) },
                 trailingContent = { Text("Change…", color = MaterialTheme.colorScheme.primary) },
+            )
+            Box {
+                ListItem(
+                    modifier = Modifier.clickable { limitMenu = true },
+                    headlineContent = { Text("Downloads at once") },
+                    trailingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${DownloadStore.limit}")
+                            Icon(Icons.Default.ArrowDropDown, null)
+                        }
+                    },
+                )
+                DropdownMenu(expanded = limitMenu, onDismissRequest = { limitMenu = false }) {
+                    (1..5).forEach { limit ->
+                        DropdownMenuItem(
+                            text = { Text("$limit") },
+                            onClick = { limitMenu = false; DownloadStore.updateLimit(limit) },
+                        )
+                    }
+                }
+            }
+            ListItem(
+                headlineContent = { Text("Save each playlist in its own folder") },
+                trailingContent = { Switch(DownloadStore.playlistFolders, DownloadStore::updatePlaylistFolders) },
             )
 
             ListItem(

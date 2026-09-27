@@ -63,10 +63,13 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import app.squirrel.AppSettings
 import app.squirrel.AppUpdater
+import app.squirrel.Background
 import app.squirrel.DownloadItem
 import app.squirrel.DownloadState
 import app.squirrel.DownloadStore
+import app.squirrel.FetchResult
 import app.squirrel.LiveProgress
+import app.squirrel.PlaylistInfo
 import app.squirrel.UpdateManager
 import app.squirrel.VideoInfo
 import kotlinx.coroutines.launch
@@ -80,7 +83,7 @@ fun MainScreen(onOpenSettings: () -> Unit) {
     val scope = rememberCoroutineScope()
     var url by remember { mutableStateOf("") }
     var fetching by remember { mutableStateOf(false) }
-    var info by remember { mutableStateOf<VideoInfo?>(null) }
+    var fetched by remember { mutableStateOf<FetchResult?>(null) }
     var alert by remember { mutableStateOf<Pair<String, String>?>(null) }
     val focus = remember { FocusRequester() }
 
@@ -90,7 +93,7 @@ fun MainScreen(onOpenSettings: () -> Unit) {
         fetching = true
         scope.launch {
             try {
-                info = store.fetchInfo(link)
+                fetched = store.fetch(link)
             } catch (e: Exception) {
                 alert = "Couldn’t Load Link" to (e.message ?: e.toString())
             } finally {
@@ -103,7 +106,16 @@ fun MainScreen(onOpenSettings: () -> Unit) {
         focus.requestFocus()
         // A link on the clipboard is most likely what the user opened the app for
         val text = clipboard.getText()?.text?.trim()
-        if (url.isEmpty() && text != null && Regex("^https?://\\S+$").matches(text)) url = text
+        if (url.isEmpty() && Background.pendingLink == null && text != null && Regex("^https?://\\S+$").matches(text)) url = text
+    }
+
+    // A link from the browser extension
+    LaunchedEffect(Background.pendingLink) {
+        val link = Background.pendingLink ?: return@LaunchedEffect
+        Background.pendingLink = null
+        fetched = null
+        url = link
+        fetch()
     }
 
     Scaffold(topBar = {
@@ -159,6 +171,7 @@ fun MainScreen(onOpenSettings: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (store.paused && store.waitingCount > 0) PausedBanner()
 
             if (store.items.isEmpty()) {
                 Column(
@@ -191,12 +204,27 @@ fun MainScreen(onOpenSettings: () -> Unit) {
         }
     }
 
-    info?.let { current ->
-        FormatDialog(current, onDismiss = { info = null }) { choice ->
+    when (val current = fetched) {
+        is VideoInfo -> FormatDialog(
+            current,
+            downloaded = remember(current) { store.downloaded(current.key, current.url) },
+            onDismiss = { fetched = null },
+            onWholePlaylist = { link ->
+                fetched = null
+                url = link
+                fetch()
+            },
+        ) { choice ->
             store.download(current, choice)
-            info = null
+            fetched = null
             url = ""
         }
+        is PlaylistInfo -> PlaylistDialog(current, onDismiss = { fetched = null }) { entries, target ->
+            store.download(entries, current, target)
+            fetched = null
+            url = ""
+        }
+        null -> {}
     }
 
     alert?.let { (title, message) ->
@@ -241,6 +269,27 @@ private fun UpdateBanner() {
     }
 }
 
+/** Downloads left waiting when Squirrel last quit don't start by surprise. */
+@Composable
+private fun PausedBanner() {
+    val store = DownloadStore
+    val count = store.waitingCount
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (count == 1) "1 download is waiting." else "$count downloads are waiting.",
+                style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = store::cancelWaiting) { Text("Cancel All") }
+            Button(onClick = store::resume) { Text("Resume") }
+        }
+    }
+}
+
 @Composable
 private fun DownloadRow(item: DownloadItem, live: LiveProgress?, onAlert: (Pair<String, String>) -> Unit, copy: () -> Unit) {
     val store = DownloadStore
@@ -251,7 +300,10 @@ private fun DownloadRow(item: DownloadItem, live: LiveProgress?, onAlert: (Pair<
                 add(ContextMenuItem("Open") { store.open(item) })
                 add(ContextMenuItem("Show in Folder") { store.reveal(item) })
             }
-            if (item.state.isActive) add(ContextMenuItem("Cancel") { store.cancel(item.id) })
+            if (item.state.isActive) {
+                add(ContextMenuItem("Cancel") { store.cancel(item.id) })
+                item.playlist?.let { add(ContextMenuItem("Cancel the Rest of “${it.title}”") { store.cancelRest(item) }) }
+            }
             if (item.state == DownloadState.Failed || item.state == DownloadState.Cancelled) {
                 add(ContextMenuItem("Retry") { store.retry(item.id) })
             }
@@ -285,6 +337,12 @@ private fun DownloadRow(item: DownloadItem, live: LiveProgress?, onAlert: (Pair<
                     item.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
                     maxLines = 2, overflow = TextOverflow.Ellipsis,
                 )
+                item.playlist?.let {
+                    Text(
+                        "${it.title} · ${it.index} of ${it.count}", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Spacer(Modifier.height(4.dp))
                 StatusLine(item, live)
             }

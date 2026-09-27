@@ -29,13 +29,25 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         post(item, title: "Download Failed", body: "\(item.title): \(message)")
     }
 
+    /// One notification for a playlist rather than one per video; clicking it shows one of the files.
+    func playlistFinished(title: String, done: Int, failed: Int, file: String?) {
+        guard done + failed > 0 else { return }  // all cancelled
+        var body = done == 1 ? "1 download" : "\(done) downloads"
+        if failed > 0 { body += ", \(failed) failed" }
+        post(id: UUID().uuidString, title: title, body: body, path: file)
+    }
+
     private func post(_ item: DownloadItem, title: String, body: String) {
+        post(id: item.id.uuidString, title: title, body: body, path: item.filePath)
+    }
+
+    private func post(id: String, title: String, body: String, path: String?) {
         guard enabled else { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        if let path = item.filePath { content.userInfo = ["path": path] }
-        let request = UNNotificationRequest(identifier: item.id.uuidString, content: content, trigger: nil)
+        if let path { content.userInfo = ["path": path] }
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
         center.getNotificationSettings { settings in
             let allowed = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
             DispatchQueue.main.async {

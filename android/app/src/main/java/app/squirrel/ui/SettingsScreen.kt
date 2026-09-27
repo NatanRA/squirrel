@@ -40,6 +40,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.squirrel.App
 import app.squirrel.data.AutoPaste
+import app.squirrel.data.DownloadRepository
 import app.squirrel.data.SaveLocations
 import app.squirrel.data.UpdateManager
 import app.squirrel.restartApp
@@ -82,6 +84,9 @@ fun SettingsScreen(onBack: () -> Unit, onAdvanced: () -> Unit, onSignIn: (LoginS
     var confirmSignOutAll by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var autoPaste by remember { mutableStateOf(AutoPaste.isEnabled(app)) }
+    var limit by remember { mutableIntStateOf(app.repository.limit) }
+    var limitMenu by remember { mutableStateOf(false) }
+    var playlistFolders by remember { mutableStateOf(app.repository.playlistFolders) }
 
     LaunchedEffect(Unit) { app.updates.refreshStatus() }
 
@@ -96,6 +101,33 @@ fun SettingsScreen(onBack: () -> Unit, onAdvanced: () -> Unit, onSignIn: (LoginS
         )
     }) { padding ->
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState())) {
+            Header("Downloads")
+            ListItem(
+                modifier = Modifier.clickable { limitMenu = true },
+                headlineContent = { Text("Downloads at once") },
+                trailingContent = {
+                    Box {
+                        Text("$limit")
+                        DropdownMenu(expanded = limitMenu, onDismissRequest = { limitMenu = false }) {
+                            for (n in 1..DownloadRepository.MAX_LIMIT) {
+                                DropdownMenuItem(text = { Text("$n") }, onClick = {
+                                    limitMenu = false
+                                    limit = n
+                                    app.repository.limit = n
+                                })
+                            }
+                        }
+                    }
+                },
+            )
+            ListItem(
+                headlineContent = { Text("Save each playlist in its own folder") },
+                trailingContent = {
+                    Switch(playlistFolders, { playlistFolders = it; app.repository.playlistFolders = it })
+                },
+            )
+
+            HorizontalDivider()
             Header("Pasting")
             ListItem(
                 headlineContent = { Text("Auto-Paste Copied Links") },

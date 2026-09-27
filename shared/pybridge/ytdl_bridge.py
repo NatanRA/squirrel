@@ -18,7 +18,9 @@ import os
 import re
 import shutil
 import threading
+import time
 import traceback
+import urllib.parse
 
 import ytdl_updater
 
@@ -31,6 +33,9 @@ import yt_dlp  # noqa: E402
 _config = {'cache_dir': None, 'cookie_file': None, 'av1_decode': False, 'vp9_decode': False}
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
+# Cancels that arrived before their download started: job id -> when
+_early_cancels: dict[str, float] = {}
+_EARLY_CANCEL_SECONDS = 30  # a later retry may reuse the id
 
 
 class Cancelled(Exception):
@@ -368,42 +373,228 @@ def _presets(info):
 
     return video + audio
 
+
+def _resolve_target(choices, target):
+    """The preset a playlist item's quality ("Best", "up to 720p", "Audio") means for this video."""
+    if target.get('kind') == 'audio':
+        audio = next((c for c in choices if c['kind'] == 'audio'), None)
+        if audio:
+            return audio
+    videos = [c for c in choices if c['kind'] == 'video']  # highest first
+    if not videos:
+        raise ValueError('No downloadable formats found')
+    if target.get('kind') == 'audio':
+        return videos[-1]  # no audio-only stream: the smallest video still has the sound
+    cap = target.get('max_height')
+    pool = [c for c in videos if not cap or c['height'] <= cap] or videos[-1:]
+    # Rather 1080p that plays everywhere than 4K that only VLC opens
+    return next((c for c in pool if c['playable']), pool[0])
+
 # endregion
 
 
+# region: playlists
+
+PLAYLIST_CAP = 500
+_SECTION_NAMES = {'videos': 'Videos', 'shorts': 'Shorts', 'streams': 'Live', 'live': 'Live',
+                  'podcasts': 'Podcasts', 'releases': 'Releases', 'playlists': 'Playlists'}
+_UNAVAILABLE = ('private', 'premium_only', 'subscriber_only', 'needs_auth')
+_YOUTUBE_HOSTS = ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be')
+
+
+def _key(info):
+    """Identifies a video across links, like yt-dlp's download archive ("youtube dQw4w9WgXcQ")."""
+    ie, video_id = info.get('ie_key') or info.get('extractor_key'), info.get('id')
+    return yt_dlp.utils.make_archive_id(ie, video_id) if ie and video_id else None
+
+
+def _playlist_hint(url):
+    """The playlist a YouTube video link also names (watch?v=…&list=…), for "Whole playlist"."""
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or '').lower()
+    if host not in _YOUTUBE_HOSTS or parsed.path.startswith('/playlist'):
+        return None
+    playlist_id = urllib.parse.parse_qs(parsed.query).get('list', [None])[0]
+    # Mixes ("RD…") are generated endlessly from the current video
+    if not playlist_id or playlist_id.startswith('RD'):
+        return None
+    base = 'https://music.youtube.com' if host == 'music.youtube.com' else 'https://www.youtube.com'
+    return f'{base}/playlist?list={urllib.parse.quote(playlist_id)}'
+
+
+def _thumbnail(entry):
+    if entry.get('thumbnail'):
+        return entry['thumbnail']
+    thumbs = [t for t in entry.get('thumbnails') or [] if t.get('url')]
+    if not thumbs:
+        return None
+    # A list row needs a small one: closest to 320 px wide when sizes are known
+    sized = [t for t in thumbs if t.get('width')]
+    return min(sized, key=lambda t: abs(t['width'] - 320))['url'] if sized else thumbs[-1]['url']
+
+
+def _section_name(playlist):
+    """"Videos", "Shorts" or "Live" for the tabs yt-dlp returns for a whole YouTube channel."""
+    path = urllib.parse.urlparse(playlist.get('webpage_url') or '').path.rstrip('/')
+    name = _SECTION_NAMES.get(path.rsplit('/', 1)[-1])
+    if name:
+        return name
+    title = playlist.get('title') or ''
+    return title.rsplit(' - ', 1)[-1] or None
+
+
+def _indexed_entries(playlist):
+    """(index within the playlist, entry) pairs; yt-dlp only lists indexes when some are missing."""
+    entries = playlist.get('entries') or []
+    indexes = playlist.get('requested_entries') or range(1, len(entries) + 1)
+    return list(zip(indexes, entries))
+
+
+def _entry_payload(entry, position, group, section):
+    flat = entry.get('_type') in ('url', 'url_transparent')
+    url = entry.get('url') if flat else (entry.get('webpage_url') or entry.get('original_url'))
+    container = group.get('webpage_url') or group.get('original_url')
+    # Posts with several videos (e.g. on X) share one link: those are picked by index instead
+    own = isinstance(url, str) and '://' in url and url != container  # not a bare id
+    title = entry.get('title')
+    return {
+        'index': position,
+        'key': _key(entry),
+        'title': title or f'Item {position}',
+        'uploader': entry.get('uploader') or entry.get('channel'),
+        'duration': entry.get('duration'),
+        'thumbnail': _thumbnail(entry),
+        'url': url if own else container,
+        'pick': None if own else entry.get('playlist_index') or position,
+        'section': section,
+        'unavailable': entry.get('availability') in _UNAVAILABLE
+                       or title in ('[Private video]', '[Deleted video]'),
+        'live': entry.get('live_status') in ('is_live', 'is_upcoming') or bool(entry.get('is_live')),
+    }
+
+
+def _playlist_payload(info, url):
+    """Every item of a (flat-extracted) playlist, channel or multi-video post, for the picker."""
+    # A whole channel comes back as one playlist per tab (Videos, Shorts, Live): each is a section
+    groups, loose = [], []
+    for index, entry in _indexed_entries(info):
+        if entry and entry.get('_type') in ('playlist', 'multi_video'):
+            groups.append((_section_name(entry), entry, [(i, e) for i, e in _indexed_entries(entry) if e]))
+        elif entry:
+            loose.append((index, entry))
+    if loose or not groups:
+        groups.insert(0, (None, info, loose))
+
+    entries, truncated, count = [], False, 0
+    for section, group, items in groups:
+        room = PLAYLIST_CAP - len(entries)
+        if len(items) > room:
+            truncated, items = True, items[:room]
+            # How many there are in all, if the site says (YouTube playlists do, channel tabs don't)
+            if count is not None and group.get('playlist_count'):
+                count += group['playlist_count']
+            else:
+                count = None
+        elif count is not None:
+            count += max(group.get('playlist_count') or 0, len(items))
+        for index, entry in items:
+            entry = {**entry, 'playlist_index': index}
+            entries.append(_entry_payload(entry, len(entries) + 1, group, section))
+
+    is_post = info.get('_type') == 'multi_video'
+    return {
+        'type': 'playlist',
+        'kind': info.get('_type'),
+        'id': info.get('id'),
+        'title': info.get('title') or info.get('id') or 'Playlist',
+        'uploader': info.get('uploader') or info.get('channel'),
+        'webpage_url': info.get('webpage_url') or url,
+        'extractor': info.get('extractor_key'),
+        'count': count,
+        'truncated': truncated,
+        # Videos of one post stay with the other downloads; a playlist gets its own folder
+        'folder': None if is_post else info.get('title'),
+        'sections': list(dict.fromkeys(e['section'] for e in entries if e['section'])),  # ones with items
+        'music': (urllib.parse.urlparse(url).hostname or '').lower() == 'music.youtube.com',
+        'entries': entries,
+    }
+
+# endregion
+
+
+def _video_payload(info, url):
+    return dict(
+        type='video',
+        id=info.get('id'),
+        key=_key(info),
+        title=info.get('title'),
+        uploader=info.get('uploader') or info.get('channel'),
+        duration=info.get('duration'),
+        thumbnail=info.get('thumbnail'),
+        webpage_url=info.get('webpage_url') or url,
+        extractor=info.get('extractor_key'),
+        playlist_url=_playlist_hint(url),
+        choices=_presets(info),
+    )
+
+
 def extract(arg: str) -> str:
+    """Video details and download choices; with ``playlists``, a playlist's items instead.
+
+    Playlist replies are opt-in so an older browser extension (which expects
+    ``choices``) keeps working against a newer engine.
+    """
     params = json.loads(arg)
+    url = params['url']
+    playlists = bool(params.get('playlists'))
     logger = _Logger()
+    opts = _base_opts(logger)
+    if playlists:
+        opts.update(extract_flat='in_playlist', playlistend=PLAYLIST_CAP + 1)
+    else:
+        opts['playlist_items'] = '1'  # only the first item is used; don't process the rest
     try:
-        with yt_dlp.YoutubeDL(_base_opts(logger)) as ydl:
-            info = ydl.extract_info(params['url'], download=False)
-            if info.get('_type') == 'playlist':
-                entries = [e for e in (info.get('entries') or []) if e]
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if playlists and info.get('_type') in ('playlist', 'multi_video'):
+                payload = _playlist_payload(info, url)
+                if not payload['entries']:
+                    raise ValueError('Playlist is empty')
+                if len(payload['entries']) > 1:
+                    return _ok(**payload)
+            while info.get('_type') in ('playlist', 'multi_video'):
+                entries = [e for e in info.get('entries') or [] if e]
                 if not entries:
                     raise ValueError('Playlist is empty')
                 info = entries[0]
-            return _ok(
-                id=info.get('id'),
-                title=info.get('title'),
-                uploader=info.get('uploader') or info.get('channel'),
-                duration=info.get('duration'),
-                thumbnail=info.get('thumbnail'),
-                webpage_url=info.get('webpage_url') or params['url'],
-                extractor=info.get('extractor_key'),
-                choices=_presets(info),
-            )
+            if info.get('_type') in ('url', 'url_transparent'):
+                # A flat-extracted single item
+                info = ydl.extract_info(info['url'], download=False, ie_key=info.get('ie_key'))
+            return _ok(**_video_payload(info, url))
     except Exception as e:
         return _err(e, logger)
 
 
 def download(arg: str) -> str:
-    """Blocking. Call from a background thread; poll ``progress`` meanwhile."""
+    """Blocking. Call from a background thread; poll ``progress`` meanwhile.
+
+    params: url, out_dir, job_id, and either ``format_ids`` (a choice from
+    ``extract``) or ``target`` ({kind: video|audio, max_height}) for playlist
+    items, whose formats aren't known until they're extracted. ``playlist_index``
+    picks one item of a link that holds several (e.g. a post with 4 videos).
+    """
     params = json.loads(arg)
     job_id = params['job_id']
+    target = params.get('target')
     job = {'status': 'starting', 'downloaded': 0, 'total': 0, 'speed': 0, 'eta': None,
-           'part': 0, 'parts': len(params['format_ids']), 'cancel': False, 'log': ''}
+           'part': 0, 'parts': len(params.get('format_ids') or []) or 1, 'cancel': False, 'log': ''}
     with _jobs_lock:
         _jobs[job_id] = job
+        cancelled_at = _early_cancels.pop(job_id, None)
+    if cancelled_at is not None and time.monotonic() - cancelled_at < _EARLY_CANCEL_SECONDS:
+        with _jobs_lock:
+            _jobs.pop(job_id, None)
+        return json.dumps({'ok': False, 'cancelled': True, 'error': 'Cancelled'})
     logger = _Logger(job)
     out_dir = params['out_dir']
     os.makedirs(out_dir, exist_ok=True)
@@ -436,10 +627,26 @@ def download(arg: str) -> str:
         job['status'] = 'extracting'
         raw = ydl.extract_info(params['url'], download=False, process=False)
         if raw.get('_type') in ('playlist', 'multi_video'):
-            raw = next(e for e in raw['entries'] if e)
-            if raw.get('_type') == 'url':
-                raw = ydl.extract_info(raw['url'], download=False, process=False)
-        for i, fid in enumerate(params['format_ids']):
+            index = params.get('playlist_index')
+            if index:
+                raw = next((e for _, e in yt_dlp.utils.PlaylistEntries(ydl, raw)[int(index)]), None)
+                if not raw:
+                    raise ValueError(f'Item {index} is no longer in this playlist')
+            else:
+                raw = next(e for e in raw['entries'] if e)
+            if raw.get('_type') in ('url', 'url_transparent'):
+                raw = ydl.extract_info(raw['url'], download=False, process=False, ie_key=raw.get('ie_key'))
+        if raw.get('_type') in ('playlist', 'multi_video'):
+            # Downloading it would save every video as "parts" of one file
+            raise ValueError('This link is a playlist. Paste it in Squirrel to choose its videos.')
+        format_ids = params.get('format_ids') or []
+        if target:
+            ydl.format_selector = None  # yt-dlp's default, just to list the formats
+            info = ydl.process_ie_result(copy.deepcopy(raw), download=False)
+            chosen.update(_resolve_target(_presets(info), target))
+            format_ids = chosen['format_ids']
+        job['parts'] = len(format_ids)
+        for i, fid in enumerate(format_ids):
             if job['cancel']:
                 raise Cancelled('Cancelled')
             job['part'] = i + 1
@@ -465,6 +672,7 @@ def download(arg: str) -> str:
         return raw
 
     processed = {}
+    chosen = {}  # the preset a target resolved to
 
     def remove_files():
         for f in files:
@@ -488,8 +696,8 @@ def download(arg: str) -> str:
                     remove_files()
             job['status'] = 'finished'
             return _ok(files=files, title=processed.get('title') or raw.get('title'),
-                       id=processed.get('id') or raw.get('id'), artist=processed.get('artist'),
-                       date=processed.get('date'), url=processed.get('url'))
+                       id=processed.get('id') or raw.get('id'), key=_key(raw), artist=processed.get('artist'),
+                       date=processed.get('date'), url=processed.get('url'), choice=chosen or None)
     except Exception as e:
         if isinstance(e, Cancelled) or job['cancel']:
             job['status'] = 'cancelled'
@@ -510,7 +718,12 @@ def progress(arg: str) -> str:
 
 
 def cancel(arg: str) -> str:
-    job = _jobs.get(json.loads(arg)['job_id'])
-    if job is not None:
-        job['cancel'] = True
+    job_id = json.loads(arg)['job_id']
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is not None:
+            job['cancel'] = True
+        else:
+            # The app may cancel just before its download call gets here
+            _early_cancels[job_id] = time.monotonic()
     return _ok()

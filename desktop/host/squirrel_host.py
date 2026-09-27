@@ -22,6 +22,7 @@ import struct
 import sys
 import threading
 import traceback
+import urllib.parse
 import uuid
 
 APP_NAME = 'Squirrel'
@@ -126,35 +127,48 @@ def cmd_start(args):
 
 
 def cmd_extract(args):
+    """args: url, playlists (the caller can show a playlist's items)"""
     _configure()
-    return json.loads(ytdl_bridge.extract(json.dumps({'url': args['url']})))
+    return json.loads(ytdl_bridge.extract(json.dumps({'url': args['url'], 'playlists': bool(args.get('playlists'))})))
 
 
 def cmd_download(args):
     """Download, merge and save one choice; returns the saved file's path.
 
-    args: url, format_ids, ext (from the chosen preset), audio, title, job_id (optional)
+    args: url, title, job_id (optional), and either format_ids + ext + audio (a
+    preset from extract) or target (a playlist item's quality, resolved by the
+    bridge). Optional: playlist_index (an item of a multi-video link) and
+    subfolder (a playlist's own folder inside the download folder).
     """
     _configure()
     job_id = args.get('job_id') or uuid.uuid4().hex
     out_dir = args.get('out_dir') or load_settings()['download_dir']
+    if args.get('subfolder'):
+        out_dir = os.path.join(out_dir, remux.safe_name(args['subfolder'], limit=80, fallback='Playlist'))
     work = os.path.join(CACHE_DIR, 'work', job_id)
     try:
         if job_id in _early_cancels:
             _early_cancels.discard(job_id)
             return {'ok': False, 'cancelled': True, 'error': 'Cancelled'}
-        result = json.loads(ytdl_bridge.download(json.dumps({
-            'url': args['url'], 'format_ids': args['format_ids'], 'out_dir': work, 'job_id': job_id})))
+        request = {'url': args['url'], 'out_dir': work, 'job_id': job_id}
+        for key in ('format_ids', 'target', 'playlist_index'):
+            if args.get(key):
+                request[key] = args[key]
+        result = json.loads(ytdl_bridge.download(json.dumps(request)))
         if not result.get('ok'):
             return result
         _phases[job_id] = 'merging'
         title = result.get('title') or args.get('title') or 'Download'
+        # A target resolved to a preset only now
+        choice = result.get('choice') or {}
+        ext = choice.get('ext') or args.get('ext')
+        audio = choice.get('kind') == 'audio' if choice else bool(args.get('audio'))
         path = remux.finish(
-            [f for f in result.get('files') or [] if f], out_dir, title,
-            ext=args.get('ext'), audio=bool(args.get('audio')),
+            [f for f in result.get('files') or [] if f], out_dir, title, ext=ext, audio=audio,
             metadata={'title': title, 'artist': result.get('artist') or '', 'date': result.get('date') or '',
                       'comment': result.get('url') or args['url']})
-        return {'ok': True, 'path': path, 'title': title, 'job_id': job_id}
+        return {'ok': True, 'path': path, 'title': title, 'job_id': job_id,
+                'key': result.get('key'), 'choice': result.get('choice')}
     except Exception as e:
         return {'ok': False, 'error': str(e) or type(e).__name__, 'traceback': traceback.format_exc()}
     finally:
@@ -174,6 +188,7 @@ def cmd_progress(args):
 def cmd_cancel(args):
     if cmd_progress(args).get('status') == 'unknown':
         _early_cancels.add(args['job_id'])  # the download hasn't reached yt-dlp yet
+        return {'ok': True}
     return json.loads(ytdl_bridge.cancel(json.dumps({'job_id': args['job_id']})))
 
 
@@ -194,9 +209,49 @@ def cmd_remove_update(args):
 
 
 def cmd_settings(args):
-    """The extension shows where files will go."""
+    """The extension shows where files will go, and checks what this engine can do."""
     settings = load_settings()
-    return {'ok': True, 'download_dir': settings['download_dir']}
+    return {'ok': True, 'download_dir': settings['download_dir'], 'features': ['playlists', 'open_in_app']}
+
+
+def cmd_open_in_app(args):
+    """Hand a link to the Squirrel app (the extension does this for playlists)."""
+    url = args['url']
+    if sys.platform == 'darwin':
+        import subprocess
+        link = 'squirrel://download?url=' + urllib.parse.quote(url, safe='')
+        subprocess.run(['open', link], check=True)
+        return {'ok': True}
+    # Windows: a running Squirrel listens on localhost (SingleInstance in Background.kt)
+    import socket
+    try:
+        with socket.create_connection(('127.0.0.1', 47913), timeout=2) as connection:
+            connection.sendall(f'open {url}\n'.encode())
+        return {'ok': True}
+    except OSError:
+        pass
+    app = _app_executable()
+    if not app:
+        return {'ok': False, 'error': "Couldn't find Squirrel. Open it and paste the link there."}
+    import subprocess
+    # Out of the browser's job object, so Squirrel keeps running when this helper exits
+    detached = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+    try:
+        subprocess.Popen([app, '--open', url], close_fds=True, creationflags=detached | subprocess.CREATE_BREAKAWAY_FROM_JOB)
+    except OSError:
+        subprocess.Popen([app, '--open', url], close_fds=True, creationflags=detached)
+    return {'ok': True}
+
+
+def _app_executable():
+    """Squirrel.exe, a few folders above the engine (<install>/app/resources/runtime)."""
+    folder = RUNTIME
+    for _ in range(4):
+        folder = os.path.dirname(folder)
+        path = os.path.join(folder, 'Squirrel.exe')
+        if os.path.isfile(path):
+            return path
+    return None
 
 
 COMMANDS = {name[4:]: fn for name, fn in globals().items() if name.startswith('cmd_')}

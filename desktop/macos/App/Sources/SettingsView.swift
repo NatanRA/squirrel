@@ -21,6 +21,9 @@ struct SettingsView: View {
 
 private struct GeneralSettings: View {
     @Environment(AppSettings.self) private var settings
+    @Environment(DownloadStore.self) private var store
+    @AppStorage(DownloadStore.limitKey) private var limit = DownloadStore.defaultLimit
+    @AppStorage(DownloadStore.playlistFolderKey) private var playlistFolders = true
     @AppStorage(MenuBar.shownKey) private var showMenuBar = true
     @AppStorage(Background.keepRunningKey) private var keepRunning = true
     @AppStorage(Notifier.enabledKey) private var notify = true
@@ -37,6 +40,10 @@ private struct GeneralSettings: View {
                         Button("Choose…", action: chooseFolder)
                     }
                 }
+                Picker("Downloads at once", selection: $limit) {
+                    ForEach(1...5, id: \.self) { Text("\($0)").tag($0) }
+                }
+                Toggle("Save each playlist in its own folder", isOn: $playlistFolders)
                 Toggle("Notify me when downloads finish", isOn: $notify)
             }
             Section {
@@ -51,6 +58,7 @@ private struct GeneralSettings: View {
         }
         .formStyle(.grouped)
         .onChange(of: showMenuBar) { Background.updateDockIcon() }
+        .onChange(of: limit) { store.pump() }
         .onChange(of: keepRunning) { Background.updateDockIcon() }
     }
 

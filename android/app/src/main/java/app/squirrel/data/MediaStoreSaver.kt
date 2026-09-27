@@ -16,7 +16,8 @@ import java.io.File
 object MediaStoreSaver {
     data class Saved(val uri: String, val mimeType: String)
 
-    fun save(context: Context, file: File, title: String, isAudio: Boolean): Saved {
+    /** [subfolder] is a playlist's own folder inside Movies/Squirrel or Music/Squirrel. */
+    fun save(context: Context, file: File, title: String, isAudio: Boolean, subfolder: String? = null): Saved {
         val ext = file.extension.lowercase()
         val mime = mimeType(ext, isAudio)
         val collection = if (isAudio) {
@@ -28,7 +29,8 @@ object MediaStoreSaver {
             put(MediaStore.MediaColumns.DISPLAY_NAME, "${safeName(title)}.$ext")
             put(MediaStore.MediaColumns.TITLE, title)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, if (isAudio) "Music/Squirrel" else "Movies/Squirrel")
+            val base = if (isAudio) "Music/Squirrel" else "Movies/Squirrel"
+            put(MediaStore.MediaColumns.RELATIVE_PATH, subfolder?.let { "$base/${safeName(it)}" } ?: base)
             put(MediaStore.MediaColumns.IS_PENDING, 1)  // hidden until fully written
         }
         val resolver = context.contentResolver
@@ -43,11 +45,10 @@ object MediaStoreSaver {
         return Saved(uri.toString(), mime)
     }
 
-    /** Saves into a folder chosen in Settings › Advanced (see [SaveLocations]). */
-    fun saveToFolder(context: Context, tree: Uri, file: File, title: String, isAudio: Boolean): Saved {
+    /** Saves into a folder chosen in Settings › Advanced, or one inside it (see [SaveLocations.destination]). */
+    fun saveToFolder(context: Context, folder: Uri, file: File, title: String, isAudio: Boolean): Saved {
         val ext = file.extension.lowercase()
         val resolver = context.contentResolver
-        val folder = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         // A generic type keeps the name as given: with the real one, some folders add their own extension.
         // The provider adds " (1)" on clashes.
         val uri = DocumentsContract.createDocument(resolver, folder, "application/octet-stream", "${safeName(title)}.$ext")
@@ -71,6 +72,6 @@ object MediaStoreSaver {
     }
 
     /** Keeps names valid on every filesystem; MediaStore adds " (1)" on clashes. */
-    private fun safeName(title: String): String =
+    fun safeName(title: String): String =
         title.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), " ").trim().trim('.').take(120).ifEmpty { "Download" }
 }

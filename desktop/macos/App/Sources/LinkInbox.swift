@@ -11,6 +11,8 @@ final class LinkInbox {
 
     /// A link the main window hasn't picked up yet
     var pending: String?
+    /// A playlist loaded elsewhere (the menu bar) for the main window to show, without loading it again
+    var pendingPlaylist: PlaylistInfo?
 
     /// Set by views that have SwiftUI's openWindow action, so a link can reopen a closed window.
     @ObservationIgnored var openMainWindow: (() -> Void)?
@@ -18,6 +20,12 @@ final class LinkInbox {
 
     func receive(_ link: String) {
         pending = link
+        NSApp.activate()
+        if !mainWindowIsOpen { openMainWindow?() }
+    }
+
+    func show(_ playlist: PlaylistInfo) {
+        pendingPlaylist = playlist
         NSApp.activate()
         if !mainWindowIsOpen { openMainWindow?() }
     }

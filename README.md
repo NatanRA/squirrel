@@ -44,6 +44,7 @@ shared/pybridge/   Python used by every app
   ytdl_bridge.py     JSON API the apps call: extract, download, progress, cancel, updates
   jsc_provider.py    yt-dlp JS challenge provider that calls the app's JS engine via `_host`
   ytdl_updater.py    Installs newer yt-dlp releases from PyPI, falling back to the built-in copy
+  tests/             Offline tests: python3 -m unittest discover shared/pybridge/tests
 shared/native/     C used by every app
   Remux.c            Merges/rewraps streams into one file with FFmpeg's libraries, no re-encoding
 ios/               Xcode project (XcodeGen), Swift sources, build scripts
@@ -187,6 +188,13 @@ release, run the workflow from the Actions tab with that release's tag.
 - **Settings › Pasting (phones):** with **Auto-Paste Copied Links** on, opening Squirrel after
   copying a link pastes it and shows the formats. On iOS, set Settings › Apps › Squirrel ›
   **Paste from Other Apps** to **Allow** so iOS doesn't ask each time.
+- **Playlists and channels:** paste a playlist, a channel or a post with several videos, tick the
+  ones you want (up to 500 are listed) and pick one quality for all of them: Best, 1080p, 720p, 480p
+  or Audio. Videos you already have start unticked. Each playlist gets a folder of its own (a Photos
+  album on iOS); turn that off in Settings. A link to one video of a YouTube playlist offers
+  **Whole Playlist**. In a browser, a playlist link opens the app to choose.
+- **Downloads wait their turn:** Settings › **Downloads at once** (3 on computers, 2 on phones).
+  Downloads still waiting when Squirrel quit don't start again until you tap **Resume**.
 - Tap a finished download to play it. Long-press for **Share**, **Retry**, **Delete** and more.
   On a phone, **Delete** also removes the file from Photos or the Gallery (iOS asks you to
   confirm); on iOS, **Remove from List** keeps the video in Photos. On a computer, double-click to

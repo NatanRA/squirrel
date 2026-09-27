@@ -843,12 +843,18 @@ final class DownloadStore {
                                      name: subtitle["name"] as? String)
                 }
             }
+            // Chapters, and for audio files the video's thumbnail as their artwork. Not for videos
+            // going to Photos: it doesn't show chapters, and might refuse the extra track
+            let chapters = choice.isAudio || !SaveSettings.videosToPhotos
+                ? (result["chapters"] as? [[String: Any]] ?? []).compactMap(Remuxer.Chapter.init) : []
+            let cover = (result["cover"] as? String).map { URL(fileURLWithPath: $0) }
             var destination = Self.uniqueDestination(title: title, ext: container)
             do {
                 if convertsToMP3 {
-                    try await Remuxer.convertToMP3(files[0], to: destination, metadata: metadata)
+                    try await Remuxer.convertToMP3(files[0], to: destination, chapters: chapters, cover: cover, metadata: metadata)
                 } else {
-                    try await Remuxer.remux(files, to: destination, subtitles: subtitles, metadata: metadata)
+                    try await Remuxer.remux(files, to: destination, subtitles: subtitles, chapters: chapters, cover: cover,
+                                            metadata: metadata)
                 }
             } catch {
                 try? FileManager.default.removeItem(at: destination)  // the name uniqueDestination reserved

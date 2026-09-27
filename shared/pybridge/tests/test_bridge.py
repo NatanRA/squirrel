@@ -9,7 +9,9 @@ desktop runtime (SQUIRREL_RUNTIME=desktop/build/runtime-macos-arm64) or a venv.
 """
 from __future__ import annotations
 
+import contextlib
 import copy
+import io
 import json
 import os
 import struct
@@ -35,6 +37,8 @@ from yt_dlp.extractor.common import InfoExtractor  # noqa: E402
 import ytdl_bridge  # noqa: E402
 
 FIXTURES: dict[str, dict] = {}
+IMAGES: dict[str, bytes] = {}  # thumbnail URL -> what the site sends
+JPEG = b'\xff\xd8\xff\xe0' + b'jpeg' * 10
 
 
 class FakeIE(InfoExtractor):
@@ -58,6 +62,13 @@ class FakeYoutubeDL(yt_dlp.YoutubeDL):
         self.add_info_extractor(FakeIE())
         self._ies = {'Fake': self._ies.pop('Fake'), **self._ies}
 
+    def urlopen(self, req):
+        url = req if isinstance(req, str) else req.url
+        if url not in IMAGES:
+            raise yt_dlp.networking.exceptions.HTTPError(
+                yt_dlp.networking.Response(io.BytesIO(b''), url, {}, status=404))
+        return contextlib.closing(io.BytesIO(IMAGES[url]))
+
     def dl(self, name, info, subtitle=False, test=False):
         with open(name, 'wb') as f:
             f.write(b'WEBVTT\n' if subtitle else info['format_id'].encode())
@@ -67,7 +78,7 @@ class FakeYoutubeDL(yt_dlp.YoutubeDL):
 
 
 def video(video_id, heights=(1080, 720, 360), vcodec='avc1.640028', audio=True, url=None, title=None,
-          subtitles=None, captions=None):
+          subtitles=None, captions=None, chapters=None, thumbnails=None):
     formats = [{'format_id': f'v{h}', 'url': f'https://example.invalid/{video_id}/{h}.mp4', 'ext': 'mp4',
                 'vcodec': vcodec, 'acodec': 'none', 'width': h * 16 // 9, 'height': h, 'fps': 30, 'tbr': h}
                for h in heights]
@@ -75,6 +86,10 @@ def video(video_id, heights=(1080, 720, 360), vcodec='avc1.640028', audio=True, 
         formats.append({'format_id': 'a', 'url': f'https://example.invalid/{video_id}/a.m4a', 'ext': 'm4a',
                         'vcodec': 'none', 'acodec': 'mp4a.40.2', 'abr': 128})
     info = {'id': video_id, 'title': title or f'Video {video_id}', 'formats': formats}
+    if chapters:
+        info['chapters'] = chapters
+    if thumbnails:
+        info['thumbnails'] = thumbnails
     for field, languages in (('subtitles', subtitles), ('automatic_captions', captions)):
         if languages:
             info[field] = {k: [{'ext': 'vtt', 'url': f'https://example.invalid/{video_id}/{k}.vtt', 'name': name}]
@@ -96,6 +111,7 @@ def call(function, **params):
 class BridgeTestCase(unittest.TestCase):
     def setUp(self):
         FIXTURES.clear()
+        IMAGES.clear()
         self.cache = tempfile.TemporaryDirectory()
         ytdl_bridge.configure(json.dumps({'cache_dir': self.cache.name, 'av1_decode': False, 'vp9_decode': False}))
         patcher = mock.patch.object(yt_dlp, 'YoutubeDL', FakeYoutubeDL)
@@ -337,6 +353,36 @@ class DownloadTests(BridgeTestCase):
                          [('eng', 'English'), ('fra', 'French (auto-generated)')])
         self.assertTrue(all(os.path.exists(t['path']) for t in result['subtitles']))
         self.assertEqual(len(result['files']), 2)  # the subtitles aren't media parts
+
+    def test_chapters(self):
+        chapters = [{'start_time': 0, 'end_time': 30, 'title': 'Intro'}, {'start_time': 30, 'end_time': 60, 'title': 'Song'}]
+        FIXTURES['fake://video/a'] = video('a', chapters=chapters)
+        result, _ = self.download(url='fake://video/a', format_ids=['v720', 'a'])
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(result['chapters'], [{'start': 0, 'end': 30, 'title': 'Intro'},
+                                              {'start': 30, 'end': 60, 'title': 'Song'}])
+        self.assertIsNone(result['cover'])  # a video has its own pictures
+
+    def test_cover_for_audio(self):
+        big, small = 'https://example.invalid/a/maxres.jpg', 'https://example.invalid/a/hq.jpg'
+        IMAGES[small] = JPEG  # the biggest isn't there, as on many YouTube videos
+        FIXTURES['fake://video/a'] = video('a', thumbnails=[
+            {'url': small, 'width': 480, 'height': 360},
+            {'url': 'https://example.invalid/a/maxres.webp', 'width': 1280, 'height': 720, 'preference': 5},
+            {'url': big, 'width': 1280, 'height': 720}])
+        result, _ = self.download(url='fake://video/a', format_ids=['a'])
+        self.assertTrue(result['ok'], result)
+        self.assertTrue(result['cover'].endswith('cover.jpg'))
+        with open(result['cover'], 'rb') as f:
+            self.assertEqual(f.read(), JPEG)
+
+    def test_no_usable_cover(self):
+        IMAGES['https://example.invalid/a/t.jpg'] = b'<html>not found</html>'
+        FIXTURES['fake://video/a'] = video('a', thumbnails=[
+            {'url': 'https://example.invalid/a/t.jpg'}, {'url': 'https://example.invalid/a/t.webp'}])
+        result, _ = self.download(url='fake://video/a', target={'kind': 'audio'})
+        self.assertTrue(result['ok'], result)
+        self.assertIsNone(result['cover'])
 
     def test_no_subtitles_for_audio(self):
         FIXTURES['fake://video/a'] = video('a', subtitles={'en': 'English'})

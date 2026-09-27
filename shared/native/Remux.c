@@ -1,5 +1,7 @@
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <libavcodec/avcodec.h>
@@ -53,6 +55,143 @@ static void set_metadata(AVDictionary **dict, const char *const *metadata, int m
             av_dict_set(dict, metadata[i], metadata[i + 1], 0);
         }
     }
+}
+
+/** MP3, M4A and FLAC: the files music apps show artwork for */
+static bool holds_artwork(const char *format) {
+    return strcmp(format, "mp3") == 0 || strcmp(format, "ipod") == 0 || strcmp(format, "flac") == 0;
+}
+
+/// Adds chapters given as three strings each: start and end in seconds, and the title.
+/// Unusable ones (end before start) are skipped.
+static int add_chapters(AVFormatContext *out, const char *const *chapters, int count) {
+    for (int i = 0; chapters && i < count; i++) {
+        double start = strtod(chapters[i * 3], NULL), end = strtod(chapters[i * 3 + 1], NULL);
+        if (!(end > start) || start < 0) {
+            continue;
+        }
+        AVChapter **grown = av_realloc_array(out->chapters, out->nb_chapters + 1, sizeof(*grown));
+        AVChapter *chapter = grown ? av_mallocz(sizeof(*chapter)) : NULL;
+        if (grown) {
+            out->chapters = grown;
+        }
+        if (!chapter) {
+            return AVERROR(ENOMEM);
+        }
+        chapter->id = out->nb_chapters;
+        chapter->time_base = (AVRational){1, 1000};
+        chapter->start = llround(start * 1000);
+        chapter->end = llround(end * 1000);
+        if (chapters[i * 3 + 2] && chapters[i * 3 + 2][0]) {
+            av_dict_set(&chapter->metadata, "title", chapters[i * 3 + 2], 0);
+        }
+        out->chapters[out->nb_chapters++] = chapter;
+    }
+    return 0;
+}
+
+/// Artwork for an audio file: a JPEG or PNG copied in as it is.
+typedef struct {
+    AVFormatContext *context;
+    AVPacket *packet;  // the picture
+    int index;         // its stream in the output
+} Cover;
+
+static void release_cover(Cover *cover) {
+    av_packet_free(&cover->packet);
+    avformat_close_input(&cover->context);
+}
+
+static unsigned big_endian(const uint8_t *bytes, int count) {
+    unsigned value = 0;
+    for (int i = 0; i < count; i++) {
+        value = value << 8 | bytes[i];
+    }
+    return value;
+}
+
+/// A JPEG's or PNG's size from its header. This FFmpeg has no image decoders to tell,
+/// and MP4 and M4A want it for artwork.
+static bool image_size(const uint8_t *data, int size, int *width, int *height) {
+    static const uint8_t png[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+    if (size >= 24 && memcmp(data, png, 8) == 0) {
+        *width = (int)big_endian(data + 16, 4);
+        *height = (int)big_endian(data + 20, 4);
+        return true;
+    }
+    // JPEG: segments after the FF D8 start marker, until a start-of-frame (SOF0-SOF15
+    // except DHT C4, JPG C8 and DAC CC) that holds the size
+    for (int i = 2; size >= 4 && data[0] == 0xFF && data[1] == 0xD8 && i + 9 < size;) {
+        if (data[i] != 0xFF) {
+            return false;
+        }
+        uint8_t marker = data[i + 1];
+        if (marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC) {
+            *height = (int)big_endian(data + i + 5, 2);
+            *width = (int)big_endian(data + i + 7, 2);
+            return true;
+        }
+        i += 2 + (int)big_endian(data + i + 2, 2);
+    }
+    return false;
+}
+
+/// Reads the picture at `path` and adds it to `out` as the file's artwork. False (with
+/// nothing added) when it isn't a JPEG or PNG: the file is then saved without artwork.
+static bool add_cover(Cover *cover, const char *path, AVFormatContext *out) {
+    AVStream *stream = NULL;
+    if (avformat_open_input(&cover->context, path, NULL, NULL) < 0
+        || avformat_find_stream_info(cover->context, NULL) < 0
+        || !(cover->packet = av_packet_alloc())) {
+        goto fail;
+    }
+    for (unsigned s = 0; s < cover->context->nb_streams && !stream; s++) {
+        enum AVCodecID codec = cover->context->streams[s]->codecpar->codec_id;
+        if (codec == AV_CODEC_ID_MJPEG || codec == AV_CODEC_ID_PNG) {
+            stream = cover->context->streams[s];
+        }
+    }
+    if (!stream) {
+        goto fail;
+    }
+    while (av_read_frame(cover->context, cover->packet) >= 0) {
+        if (cover->packet->stream_index != stream->index) {
+            av_packet_unref(cover->packet);
+            continue;
+        }
+        int width = stream->codecpar->width, height = stream->codecpar->height;
+        if ((width <= 0 || height <= 0) && !image_size(cover->packet->data, cover->packet->size, &width, &height)) {
+            break;
+        }
+        // Only now that it's usable: a stream can't be taken back out of `out`
+        AVStream *out_stream = avformat_new_stream(out, NULL);
+        if (!out_stream || avcodec_parameters_copy(out_stream->codecpar, stream->codecpar) < 0) {
+            break;
+        }
+        out_stream->codecpar->codec_tag = 0;
+        out_stream->codecpar->width = width;
+        out_stream->codecpar->height = height;
+        out_stream->disposition = AV_DISPOSITION_ATTACHED_PIC;
+        out_stream->time_base = (AVRational){1, 1000};
+        cover->index = out_stream->index;
+        return true;
+    }
+
+fail:
+    release_cover(cover);
+    return false;
+}
+
+/// Writes the artwork, which muxers want before the audio.
+static int write_cover(Cover *cover, AVFormatContext *out) {
+    if (!cover->packet) {
+        return 0;
+    }
+    cover->packet->stream_index = cover->index;
+    cover->packet->pts = cover->packet->dts = 0;
+    cover->packet->duration = 0;
+    cover->packet->pos = -1;
+    return av_write_frame(out, cover->packet);
 }
 
 static void release(Input *input) {
@@ -217,15 +356,25 @@ static int write_converted_subtitle(Input *input, AVFormatContext *out) {
 
 int ytdl_remux(const char *const *inputs, int input_count, const char *output, const char *format,
                const char *const *metadata, int metadata_count, char *error, size_t error_size) {
-    return ytdl_remux_subtitled(inputs, input_count, NULL, NULL, NULL, 0, output, format,
-                                metadata, metadata_count, error, error_size);
+    return ytdl_remux_full(inputs, input_count, NULL, NULL, NULL, 0, NULL, 0, NULL, output, format,
+                           metadata, metadata_count, error, error_size);
 }
 
 int ytdl_remux_subtitled(const char *const *inputs, int input_count, const char *const *subtitles,
                          const char *const *languages, const char *const *titles, int subtitle_count,
                          const char *output, const char *format, const char *const *metadata,
                          int metadata_count, char *error, size_t error_size) {
+    return ytdl_remux_full(inputs, input_count, subtitles, languages, titles, subtitle_count, NULL, 0, NULL,
+                           output, format, metadata, metadata_count, error, error_size);
+}
+
+int ytdl_remux_full(const char *const *inputs, int input_count, const char *const *subtitles,
+                    const char *const *languages, const char *const *titles, int subtitle_count,
+                    const char *const *chapters, int chapter_count, const char *cover_path,
+                    const char *output, const char *format, const char *const *metadata,
+                    int metadata_count, char *error, size_t error_size) {
     Input in[MAX_INPUTS + MAX_SUBTITLES] = {0};
+    Cover cover = {0};
     int opened = 0;
     AVFormatContext *out = NULL;
     AVDictionary *options = NULL;
@@ -274,7 +423,8 @@ int ytdl_remux_subtitled(const char *const *inputs, int input_count, const char 
             if (!wanted) {
                 continue;
             }
-            if (avformat_query_codec(out->oformat, stream->codecpar->codec_id, FF_COMPLIANCE_NORMAL) != 1) {
+            // 0 is a definite no; Ogg can't tell (a negative answer) but takes Opus and Vorbis
+            if (avformat_query_codec(out->oformat, stream->codecpar->codec_id, FF_COMPLIANCE_NORMAL) == 0) {
                 ret = AVERROR(EINVAL);
                 snprintf(error, error_size, "%s can't be stored in %s",
                          avcodec_get_name(stream->codecpar->codec_id), out->oformat->name);
@@ -316,6 +466,14 @@ int ytdl_remux_subtitled(const char *const *inputs, int input_count, const char 
             opened++;
         }
     }
+    // Artwork only for audio files, where music apps show it
+    if (cover_path && !have_video && holds_artwork(format)) {
+        add_cover(&cover, cover_path, out);
+    }
+    if ((ret = add_chapters(out, chapters, chapter_count)) < 0) {
+        set_error(error, error_size, "Out of memory", ret);
+        goto end;
+    }
 
     set_metadata(&out->metadata, metadata, metadata_count);
 
@@ -333,6 +491,10 @@ int ytdl_remux_subtitled(const char *const *inputs, int input_count, const char 
         goto end;
     }
     header_written = true;
+    if ((ret = write_cover(&cover, out)) < 0) {
+        set_error(error, error_size, "Could not write the artwork", ret);
+        goto end;
+    }
 
     // Interleave: always write the earliest pending packet across inputs,
     // so memory stays flat even when merging large separate streams.
@@ -377,6 +539,7 @@ end:
     for (int i = 0; i < MAX_INPUTS + MAX_SUBTITLES; i++) {
         release(&in[i]);
     }
+    release_cover(&cover);
     if (out) {
         if (!header_written || ret < 0) {
             // leave no half-written file behind
@@ -525,12 +688,14 @@ static int mp3_sample_rate(const AVCodecContext *encoder, int rate) {
     return best ? best : highest;
 }
 
-int ytdl_convert_to_mp3(const char *input, const char *output, const char *const *metadata,
-                        int metadata_count, char *error, size_t error_size) {
+int ytdl_convert_to_mp3(const char *input, const char *output, const char *const *chapters, int chapter_count,
+                        const char *cover_path, const char *const *metadata, int metadata_count,
+                        char *error, size_t error_size) {
     AVFormatContext *in = NULL;
     AVPacket *packet = NULL;
     AVDictionary *options = NULL;
     Conversion c = {0};
+    Cover cover = {0};
     const AVCodec *decoder = NULL;
     bool header_written = false;
     int ret;
@@ -595,6 +760,13 @@ int ytdl_convert_to_mp3(const char *input, const char *output, const char *const
     }
     out_stream->time_base = c.encoder->time_base;
     set_metadata(&c.out->metadata, metadata, metadata_count);
+    if (cover_path) {
+        add_cover(&cover, cover_path, c.out);
+    }
+    if ((ret = add_chapters(c.out, chapters, chapter_count)) < 0) {
+        set_error(error, error_size, "Out of memory", ret);
+        goto end;
+    }
 
     c.fifo = av_audio_fifo_alloc(c.encoder->sample_fmt, c.encoder->ch_layout.nb_channels, c.encoder->frame_size);
     c.decoded = av_frame_alloc();
@@ -617,6 +789,10 @@ int ytdl_convert_to_mp3(const char *input, const char *output, const char *const
         goto end;
     }
     header_written = true;
+    if ((ret = write_cover(&cover, c.out)) < 0) {
+        set_error(error, error_size, "Could not write the artwork", ret);
+        goto end;
+    }
 
     while ((ret = av_read_frame(in, packet)) >= 0) {
         if (packet->stream_index == audio) {
@@ -650,6 +826,7 @@ end:
     av_frame_free(&c.frame);
     if (c.fifo) av_audio_fifo_free(c.fifo);
     swr_free(&c.resampler);
+    release_cover(&cover);
     avcodec_free_context(&c.decoder);
     avcodec_free_context(&c.encoder);
     avformat_close_input(&in);

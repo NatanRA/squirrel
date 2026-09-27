@@ -205,6 +205,9 @@ release, run the workflow from the Actions tab with that release's tag.
 - **MP3:** pick **MP3** under Audio Only (or for a whole playlist) to get the audio re-encoded as an
   MP3 for players that don't take M4A. **Audio** keeps the original, which is smaller and loses
   nothing.
+- **Artwork and chapters:** audio files (MP3, M4A) get the video's thumbnail as their artwork, for
+  music apps to show. Videos and audio keep the chapters the site lists, so players can jump
+  between them.
 - **Subtitles:** turn on Settings › **Add subtitles to videos** to embed them as tracks you can
   switch on in the player, in the languages your device is set to, when a video has them. **Include
   automatic captions** adds the site's own automatic ones, in the video's language only (never
@@ -250,7 +253,6 @@ release, run the workflow from the Actions tab with that release's tag.
   can't run them). On older versions, downloads get about 30 seconds in the background. Sideloading
   tools that rewrite the bundle ID, such as AltStore, disable this feature.
 - **Google may refuse sign-in** in the in-app browser. If so, use **Import cookies.txt**.
-- Cover art isn't embedded yet.
 - **Converting for Photos** hasn't been timed on an iPhone yet. The Simulator has no hardware HEVC
   encoder, so it converts far slower than a phone will (a 29 s 1080p reel: about a minute there,
   2 s on an M5 Mac), and it can't decode AV1, so only VP9 conversion has run in the app itself.

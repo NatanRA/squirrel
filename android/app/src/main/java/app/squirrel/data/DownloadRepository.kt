@@ -351,11 +351,16 @@ class DownloadRepository(private val app: Application, private val scope: Corout
                 "date" to result.string("date").orEmpty(),
                 "comment" to (result.string("url") ?: item.sourceUrl),
             )
+            // Chapters, and for audio files the video's thumbnail as their artwork
+            val chapters = result.optJSONArray("chapters")?.objects().orEmpty().map {
+                Remuxer.Chapter(it.optDouble("start"), it.optDouble("end"), it.optString("title"))
+            }
+            val cover = result.string("cover")?.let(::File)
             var finished: File
             if (choice.convert == "mp3") {
                 // Re-encoded from the best audio, whatever its format
                 finished = File(workDir, "final.mp3")
-                Remuxer.writeMp3(files[0], finished, metadata)
+                Remuxer.writeMp3(files[0], finished, metadata, chapters, cover)
             } else {
                 // Merge or rewrap with FFmpeg into the container the format picker chose, with any subtitles
                 val tracks = result.optJSONArray("subtitles")?.objects().orEmpty().mapNotNull { track ->
@@ -364,7 +369,7 @@ class DownloadRepository(private val app: Application, private val scope: Corout
                 val container = choice.ext?.takeIf(Remuxer::canWrite) ?: if (choice.isAudio) "m4a" else "mp4"
                 finished = File(workDir, "final.$container")
                 try {
-                    Remuxer.write(files, finished, metadata, tracks)
+                    Remuxer.write(files, finished, metadata, tracks, chapters, cover)
                 } catch (e: BridgeException) {
                     // A format FFmpeg can't rewrap: keep the single file exactly as downloaded
                     if (files.size != 1) throw e

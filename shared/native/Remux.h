@@ -36,11 +36,31 @@ int ytdl_remux_subtitled(const char *_Nonnull const *_Nonnull inputs, int input_
                          const char *_Nonnull const *_Nullable metadata, int metadata_count,
                          char *_Nonnull error, size_t error_size);
 
+/// `ytdl_remux_subtitled` plus chapters and artwork.
+///
+/// - chapters: `chapter_count` chapters as three strings each: start and end in
+///   seconds ("0", "61.5") and the title. Written to MP4, M4A, MOV, Matroska,
+///   WebM and MP3 files.
+/// - cover: a JPEG or PNG added as the artwork of audio files (MP3, M4A, FLAC),
+///   copied as it is; NULL for none. Ignored for videos and other formats, and
+///   left out if it can't be read.
+int ytdl_remux_full(const char *_Nonnull const *_Nonnull inputs, int input_count,
+                    const char *_Nonnull const *_Nullable subtitles,
+                    const char *_Nullable const *_Nullable languages,
+                    const char *_Nullable const *_Nullable titles, int subtitle_count,
+                    const char *_Nonnull const *_Nullable chapters, int chapter_count,
+                    const char *_Nullable cover,
+                    const char *_Nonnull output, const char *_Nonnull format,
+                    const char *_Nonnull const *_Nullable metadata, int metadata_count,
+                    char *_Nonnull error, size_t error_size);
+
 /// Decodes the first audio stream of `input` and encodes it as an MP3 (LAME,
-/// variable bitrate around 190 kbps, stereo or mono) at `output`, tagged with
-/// `metadata` like `ytdl_remux`. Returns 0 on success; otherwise writes a
-/// message into `error`.
+/// variable bitrate around 190 kbps, stereo or mono) at `output`, with
+/// `chapters` and `cover` art like `ytdl_remux_full` and tagged with `metadata`
+/// like `ytdl_remux`. Returns 0 on success; otherwise writes a message into `error`.
 int ytdl_convert_to_mp3(const char *_Nonnull input, const char *_Nonnull output,
+                        const char *_Nonnull const *_Nullable chapters, int chapter_count,
+                        const char *_Nullable cover,
                         const char *_Nonnull const *_Nullable metadata, int metadata_count,
                         char *_Nonnull error, size_t error_size);
 

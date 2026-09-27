@@ -16,6 +16,21 @@ enum Remuxer {
         let name: String?
     }
 
+    /// A chapter, as the bridge's `download` lists them.
+    struct Chapter {
+        /// In seconds
+        let start: Double
+        let end: Double
+        let title: String
+
+        init?(_ dict: [String: Any]) {
+            guard let start = dict["start"] as? Double, let end = dict["end"] as? Double else { return nil }
+            self.start = start
+            self.end = end
+            title = dict["title"] as? String ?? ""
+        }
+    }
+
     /// Video codecs Photos refuses, by FFmpeg's names, even on iPhones that play them (AV1)
     static let photosRefuses: Set<String> = ["av1", "vp9", "vp8"]
 
@@ -34,9 +49,11 @@ enum Remuxer {
         muxers[ext.lowercased()] != nil
     }
 
-    /// Subtitles that can't be read are left out rather than failing the file.
+    /// Subtitles that can't be read are left out rather than failing the file. `cover` (a JPEG
+    /// or PNG) becomes the artwork of audio files; videos keep their own pictures.
     static func remux(
-        _ inputs: [URL], to output: URL, subtitles: [Subtitle] = [], metadata: [String: String] = [:]
+        _ inputs: [URL], to output: URL, subtitles: [Subtitle] = [], chapters: [Chapter] = [], cover: URL? = nil,
+        metadata: [String: String] = [:]
     ) async throws {
         guard let muxer = muxers[output.pathExtension.lowercased()] else {
             throw BridgeError(message: "Can't write .\(output.pathExtension) files")
@@ -45,6 +62,7 @@ enum Remuxer {
         let subtitlePaths = subtitles.map(\.file.path)
         let languages = subtitles.map(\.language)
         let names = subtitles.map(\.name)
+        let marks = marks(chapters)
         let tags = tags(metadata)
         let outputPath = output.path
 
@@ -53,11 +71,16 @@ enum Remuxer {
                 withCStrings(subtitlePaths) { subtitlePointers in
                     withCStrings(languages) { languagePointers in
                         withCStrings(names) { namePointers in
-                            withCStrings(tags) { tagPointers in
-                                ytdl_remux_subtitled(
-                                    inputPointers, Int32(paths.count),
-                                    subtitlePointers, languagePointers, namePointers, Int32(subtitlePaths.count),
-                                    outputPath, muxer, tagPointers, Int32(tags.count / 2), error, size)
+                            withCStrings(marks) { markPointers in
+                                withCStrings([cover?.path]) { coverPointer in
+                                    withCStrings(tags) { tagPointers in
+                                        ytdl_remux_full(
+                                            inputPointers, Int32(paths.count),
+                                            subtitlePointers, languagePointers, namePointers, Int32(subtitlePaths.count),
+                                            markPointers, Int32(marks.count / 3), coverPointer[0],
+                                            outputPath, muxer, tagPointers, Int32(tags.count / 2), error, size)
+                                    }
+                                }
                             }
                         }
                     }
@@ -66,17 +89,30 @@ enum Remuxer {
         }
     }
 
-    /// Re-encodes the audio of `input` as an MP3 at `output`.
-    static func convertToMP3(_ input: URL, to output: URL, metadata: [String: String] = [:]) async throws {
+    /// Re-encodes the audio of `input` as an MP3 at `output`, with chapters and `cover` art.
+    static func convertToMP3(
+        _ input: URL, to output: URL, chapters: [Chapter] = [], cover: URL? = nil, metadata: [String: String] = [:]
+    ) async throws {
         let inputPath = input.path
         let outputPath = output.path
+        let marks = marks(chapters)
         let tags = tags(metadata)
 
         try await run(failure: "Couldn't make the MP3") { error, size in
-            withCStrings(tags) { tagPointers in
-                ytdl_convert_to_mp3(inputPath, outputPath, tagPointers, Int32(tags.count / 2), error, size)
+            withCStrings(marks) { markPointers in
+                withCStrings([cover?.path]) { coverPointer in
+                    withCStrings(tags) { tagPointers in
+                        ytdl_convert_to_mp3(inputPath, outputPath, markPointers, Int32(marks.count / 3), coverPointer[0],
+                                            tagPointers, Int32(tags.count / 2), error, size)
+                    }
+                }
             }
         }
+    }
+
+    /// Start, end and title of each chapter, as Remux.c takes them
+    private static func marks(_ chapters: [Chapter]) -> [String] {
+        chapters.flatMap { [String($0.start), String($0.end), $0.title] }
     }
 
     /// FFmpeg's name for the codec of the file's video ("h264", "hevc", "av1", "vp9"), nil without one.

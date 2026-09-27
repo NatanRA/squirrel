@@ -175,7 +175,8 @@ def cmd_download(args):
             [f for f in result.get('files') or [] if f], out_dir, title, ext=ext, audio=audio,
             metadata={'title': title, 'artist': result.get('artist') or '', 'date': result.get('date') or '',
                       'comment': result.get('url') or args['url']},
-            subtitles=result.get('subtitles') or [], convert=convert)
+            subtitles=result.get('subtitles') or [], convert=convert,
+            chapters=result.get('chapters') or [], cover=result.get('cover'))
         return {'ok': True, 'path': path, 'title': title, 'job_id': job_id,
                 'key': result.get('key'), 'choice': result.get('choice')}
     except Exception as e:

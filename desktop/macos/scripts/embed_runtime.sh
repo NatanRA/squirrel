@@ -17,5 +17,6 @@ fi
 
 DEST="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/runtime"
 rm -rf "$DEST"
-# -a keeps symlinks and permissions (the Python install relies on both)
-rsync -a --exclude '__pycache__/*.opt-*.pyc' "$RUNTIME/" "$DEST/"
+# -a keeps symlinks and permissions (the Python install relies on both). No bytecode: the engine
+# keeps it in the user's cache folder (see squirrel-host), so any here is left over from a test run.
+rsync -a --exclude '__pycache__' "$RUNTIME/" "$DEST/"

@@ -79,7 +79,11 @@ if [ -n "$QJS" ]; then
 fi
 
 # Parts of Python the engine never uses: the Tk GUI toolkit, IDLE, pip's installer, headers
-PYLIB="$OUT/python/Lib"; [ -d "$PYLIB" ] || PYLIB="$(echo "$OUT"/python/lib/python3.*)"
+# (By target, not by testing for Lib/: Macs don't tell lib and Lib apart)
+case "$TARGET" in
+    windows-*) PYLIB="$OUT/python/Lib" ;;
+    *) PYLIB="$OUT/python/lib/python$PY_MINOR" ;;
+esac
 rm -rf "$PYLIB"/{tkinter,idlelib,turtledemo,ensurepip,pydoc_data,lib2to3,test,turtle.py} \
     "$OUT"/python/{tcl,include,libs} "$OUT"/python/lib/{tcl*,tk*,itcl*,thread*} "$OUT"/python/lib/libtcl* "$OUT"/python/lib/libtk* \
     "$OUT"/python/DLLs/{_tkinter.pyd,tcl*.dll,tk*.dll,zlib*.dll.bak} "$PYLIB"/lib-dynload/_tkinter* 2>/dev/null || true

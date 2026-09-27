@@ -85,9 +85,13 @@ struct ContentView: View {
             fieldFocused = true
             inbox.mainWindowIsOpen = true
             inbox.openMainWindow = { openWindow(id: "main") }
+            Background.updateDockIcon()
             if inbox.pending == nil { pasteLinkFromClipboard() }
         }
-        .onDisappear { inbox.mainWindowIsOpen = false }
+        .onDisappear {
+            inbox.mainWindowIsOpen = false
+            Background.updateDockIcon()
+        }
         // Links from the Share menu, the Safari extension and the Services menu
         .onChange(of: inbox.pending, initial: true) { _, link in
             guard let link else { return }

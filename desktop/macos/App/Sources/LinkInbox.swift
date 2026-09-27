@@ -49,10 +49,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NativeMessaging.register()
     }
 
-    /// Keep running with the window closed: the menu bar item, the Share menu, Services and the
-    /// browser extensions still use the app.
+    /// Unless Settings › General says to quit, keep running with the window closed: the menu bar
+    /// item, the Share menu, Services and the browser extensions still use the app.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        false
+        !Background.keepRunning
+    }
+
+    /// Opening Squirrel again (Finder, Spotlight, Launchpad) while it runs in the background shows the window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !LinkInbox.shared.mainWindowIsOpen { LinkInbox.shared.openMainWindow?() }
+        return true
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

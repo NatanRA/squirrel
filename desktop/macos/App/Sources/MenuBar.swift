@@ -8,6 +8,23 @@ enum MenuBar {
     static let shownKey = "showMenuBarItem"
 }
 
+/// Keep running when the window closes (Settings › General): Squirrel stays in the menu bar for
+/// links from browsers, the Share menu and Services, and leaves the Dock until the window reopens.
+@MainActor
+enum Background {
+    static let keepRunningKey = "keepRunningWhenClosed"
+
+    static var keepRunning: Bool { UserDefaults.standard.object(forKey: keepRunningKey) as? Bool ?? true }
+    private static var inMenuBar: Bool { UserDefaults.standard.object(forKey: MenuBar.shownKey) as? Bool ?? true }
+
+    /// In the Dock while the window is open, and whenever the menu bar item isn't there to reach it by
+    static func updateDockIcon() {
+        let hide = keepRunning && inMenuBar && !LinkInbox.shared.mainWindowIsOpen
+        let policy: NSApplication.ActivationPolicy = hide ? .accessory : .regular
+        if NSApp.activationPolicy() != policy { NSApp.setActivationPolicy(policy) }
+    }
+}
+
 struct MenuBarLabel: View {
     @Environment(DownloadStore.self) private var store
 

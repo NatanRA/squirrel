@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.squirrel.AppSettings
+import app.squirrel.Background
 import app.squirrel.CookieBrowser
 import app.squirrel.DownloadStore
 import app.squirrel.UpdateManager
@@ -71,6 +72,14 @@ fun SettingsScreen(appVersion: String, onBack: () -> Unit) {
                 headlineContent = { Text("Save to") },
                 supportingContent = { Text(AppSettings.downloadFolder.path) },
                 trailingContent = { Text("Change…", color = MaterialTheme.colorScheme.primary) },
+            )
+
+            ListItem(
+                headlineContent = { Text("Keep running when the window is closed") },
+                supportingContent = {
+                    Text("Squirrel stays in the notification area by the clock, so downloads carry on. Click its icon to open it, or right-click to quit.")
+                },
+                trailingContent = { Switch(Background.keepRunning, Background::updateKeepRunning) },
             )
 
             HorizontalDivider()

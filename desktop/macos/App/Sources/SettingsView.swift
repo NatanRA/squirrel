@@ -22,6 +22,7 @@ struct SettingsView: View {
 private struct GeneralSettings: View {
     @Environment(AppSettings.self) private var settings
     @AppStorage(MenuBar.shownKey) private var showMenuBar = true
+    @AppStorage(Background.keepRunningKey) private var keepRunning = true
     @AppStorage(Notifier.enabledKey) private var notify = true
 
     var body: some View {
@@ -40,12 +41,17 @@ private struct GeneralSettings: View {
             }
             Section {
                 Toggle("Show Squirrel in the menu bar", isOn: $showMenuBar)
+                Toggle("Keep running when the window is closed", isOn: $keepRunning)
             } footer: {
-                Text("Download a link and follow progress from the menu bar, without opening this window.")
+                Text(keepRunning && showMenuBar
+                     ? "Download a link and follow progress from the menu bar. With the window closed, Squirrel stays up there and leaves the Dock; Quit is in its menu."
+                     : "Download a link and follow progress from the menu bar, without opening this window.")
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
+        .onChange(of: showMenuBar) { Background.updateDockIcon() }
+        .onChange(of: keepRunning) { Background.updateDockIcon() }
     }
 
     private func chooseFolder() {

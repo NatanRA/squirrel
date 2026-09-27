@@ -19,6 +19,9 @@ class BridgeException(message: String, val cancelled: Boolean = false) : Excepti
 /** org.json turns JSON null into the text "null"; this returns null for missing, null or empty values. */
 fun JSONObject.string(key: String): String? = if (isNull(key)) null else optString(key).ifEmpty { null }
 
+/** Null for missing or null values, which optInt would turn into 0. */
+fun JSONObject.int(key: String): Int? = (opt(key) as? Number)?.toInt()
+
 /**
  * Runs the shared yt-dlp bridge (shared/pybridge/ytdl_bridge.py) through Chaquopy.
  * Every call takes and returns JSON, exactly as on iOS.

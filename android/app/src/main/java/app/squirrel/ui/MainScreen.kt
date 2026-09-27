@@ -83,9 +83,8 @@ import app.squirrel.App
 import app.squirrel.data.AutoPaste
 import app.squirrel.data.DownloadItem
 import app.squirrel.data.DownloadState
-import app.squirrel.data.FormatChoice
+import app.squirrel.data.FetchResult
 import app.squirrel.data.LiveProgress
-import app.squirrel.data.VideoInfo
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,11 +100,13 @@ fun MainScreen(
     val repository = App.instance.repository
     val items by repository.items.collectAsStateWithLifecycle()
     val live by repository.live.collectAsStateWithLifecycle()
+    val paused by repository.paused.collectAsStateWithLifecycle()
+    val waiting = items.count { it.state == DownloadState.QUEUED }
     val scope = rememberCoroutineScope()
 
     var url by remember { mutableStateOf("") }
     var fetching by remember { mutableStateOf(false) }
-    var info by remember { mutableStateOf<VideoInfo?>(null) }
+    var fetched by remember { mutableStateOf<FetchResult?>(null) }
     var alert by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -131,7 +132,7 @@ fun MainScreen(
         fetching = true
         scope.launch {
             try {
-                info = repository.fetchInfo(link)
+                fetched = repository.fetch(link)
             } catch (e: Exception) {
                 alert = "Couldn't Load Link" to (e.message ?: e.toString())
             } finally {
@@ -152,7 +153,7 @@ fun MainScreen(
         if (pastedUrl != null) {
             onPastedUrlConsumed()
             // Leave anything already in progress alone
-            if (url.isBlank() && !fetching && info == null && alert == null) {
+            if (url.isBlank() && !fetching && fetched == null && alert == null) {
                 url = pastedUrl
                 fetch()
             }
@@ -180,6 +181,9 @@ fun MainScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item { UpdateBanner() }
+            if (paused && waiting > 0) {
+                item { PausedBanner(waiting) }
+            }
             item {
                 OutlinedTextField(
                     value = url,
@@ -245,19 +249,40 @@ fun MainScreen(
         }
     }
 
-    info?.let { current ->
-        FormatSheet(current, onDismiss = { info = null }) { choice: FormatChoice ->
-            if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
-                    context, Manifest.permission.POST_NOTIFICATIONS,
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                // For the progress notification; downloads work either way
-                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-            repository.download(current, choice)
-            info = null
+    fun requestNotifications() {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            // For the progress notification; downloads work either way
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    when (val current = fetched) {
+        is FetchResult.Video -> FormatSheet(
+            current.info,
+            downloaded = repository.downloaded(current.info.key, current.info.url),
+            onDismiss = { fetched = null },
+            onOpen = { open(context, it) },
+            onWholePlaylist = { link ->
+                fetched = null
+                url = link
+                fetch()
+            },
+        ) { choice ->
+            requestNotifications()
+            repository.download(current.info, choice)
+            fetched = null
             url = ""
         }
+        is FetchResult.Playlist -> PlaylistSheet(current.playlist, onDismiss = { fetched = null }) { entries, target ->
+            requestNotifications()
+            repository.download(entries, current.playlist, target)
+            fetched = null
+            url = ""
+        }
+        null -> {}
     }
 
     alert?.let { (title, message) ->
@@ -267,6 +292,24 @@ fun MainScreen(
             title = { Text(title) },
             text = { Text(message) },
         )
+    }
+}
+
+/** Downloads left waiting when Squirrel last closed don't start by surprise. */
+@Composable
+private fun PausedBanner(waiting: Int) {
+    val repository = App.instance.repository
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp)) {
+            Text(
+                if (waiting == 1) "1 download is waiting." else "$waiting downloads are waiting.",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = repository::cancelWaiting) { Text("Cancel All") }
+                Button(onClick = repository::resume) { Text("Resume") }
+            }
+        }
     }
 }
 
@@ -337,6 +380,13 @@ private fun DownloadRow(
                     item.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
                     maxLines = 2, overflow = TextOverflow.Ellipsis,
                 )
+                item.playlist?.let { playlist ->
+                    Text(
+                        "${playlist.title} · ${playlist.index} of ${playlist.count}",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Spacer(Modifier.height(4.dp))
                 StatusLine(item, live)
             }
@@ -349,6 +399,12 @@ private fun DownloadRow(
             }
             if (item.state.isActive) {
                 DropdownMenuItem(text = { Text("Cancel") }, onClick = { menu = false; repository.cancel(item.id) })
+                item.playlist?.let { playlist ->
+                    DropdownMenuItem(
+                        text = { Text("Cancel the Rest of “${playlist.title}”", maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                        onClick = { menu = false; repository.cancelRest(item) },
+                    )
+                }
             }
             if (item.state == DownloadState.FAILED || item.state == DownloadState.CANCELLED) {
                 DropdownMenuItem(text = { Text("Retry") }, onClick = { menu = false; repository.retry(item.id) })

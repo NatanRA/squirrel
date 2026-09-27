@@ -15,6 +15,10 @@ async function engine(cmd, args) {
   return reply;
 }
 
+// What the installed app can do: an older one doesn't know about playlists
+const settings = engine('settings');
+const features = settings.then((s) => s.features ?? [], () => []);
+
 function showMessage(text, { info: isInfo = false } = {}) {
   const message = $('message');
   message.hidden = !text;
@@ -36,11 +40,12 @@ async function fetchFormats(event) {
   $('fetch').disabled = true;
   $('fetch').textContent = '…';
   $('formats').hidden = true;
+  $('playlist').hidden = true;
   showMessage('Getting formats…', { info: true });
   try {
-    info = await engine('extract', { url });
+    info = await engine('extract', { url, playlists: (await features).includes('playlists') });
     showMessage('');
-    renderFormats();
+    if (info.type === 'playlist') renderPlaylist(); else renderFormats();
   } catch (error) {
     showMessage(error.message);
   } finally {
@@ -57,7 +62,29 @@ function renderFormats() {
   fill($('audio'), audio);
   $('video-group').hidden = !video.length;
   $('audio-group').hidden = !audio.length;
+  $('whole-playlist').hidden = !info.playlist_url;
   $('formats').hidden = false;
+}
+
+// Too many videos to choose from here: the app lists them
+function renderPlaylist() {
+  $('playlist-title').textContent = info.title ?? '';
+  const count = info.entries.length;
+  $('playlist-count').textContent = `${count === 1 ? '1 video' : `${count} videos`}. Choose which to download in Squirrel.`;
+  $('playlist').hidden = false;
+}
+
+async function openInApp(url) {
+  try {
+    await engine('open_in_app', { url });
+    info = null;
+    $('formats').hidden = true;
+    $('playlist').hidden = true;
+    $('url').value = '';
+    showMessage('Opened in Squirrel.', { info: true });
+  } catch (error) {
+    showMessage(error.message);
+  }
 }
 
 function fill(list, choices) {
@@ -131,6 +158,8 @@ function renderJob(job) {
 
 async function init() {
   $('form').addEventListener('submit', fetchFormats);
+  $('open-in-app').addEventListener('click', () => openInApp(info.webpage_url));
+  $('open-playlist').addEventListener('click', () => openInApp(info.playlist_url));
   $('clear').addEventListener('click', async () => { await send({ type: 'clear' }); refreshJobs(); });
 
   // Opened by right-click › Download with Squirrel: that link, with its formats straight away
@@ -151,9 +180,9 @@ async function init() {
   setInterval(refreshJobs, 500);
 
   try {
-    const settings = await engine('settings');
-    $('footer').textContent = `Saving to ${settings.download_dir}`;
-    $('footer').title = settings.download_dir;
+    const { download_dir: folder } = await settings;
+    $('footer').textContent = `Saving to ${folder}`;
+    $('footer').title = folder;
   } catch (error) {
     showMessage(error.message);
   }

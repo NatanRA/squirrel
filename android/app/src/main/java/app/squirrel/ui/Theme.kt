@@ -10,6 +10,9 @@ import androidx.compose.ui.graphics.Color
 /** Colour for formats the device's own players can't play (matches iOS's orange). */
 val WarningColor = Color(0xFFE8710A)
 
+/** Colour for videos already downloaded (matches the Mac app's green). */
+val DoneColor = Color(0xFF34A853)
+
 // Material 3 "fidelity" schemes generated from Squirrel's brand colour #B8532A
 // (see branding/README.md), so the app looks the same on every phone.
 private val LightColors = lightColorScheme(

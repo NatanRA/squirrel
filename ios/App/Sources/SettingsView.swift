@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @Environment(UpdateManager.self) private var updates
     @Environment(CookieStore.self) private var cookies
+    @Environment(DownloadStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
     @State private var signInSite: LoginSite?
@@ -15,12 +16,15 @@ struct SettingsView: View {
     @AppStorage(SaveSettings.videosToPhotosKey) private var videosToPhotos = true
     @AppStorage(SaveSettings.keepCopyKey) private var keepCopy = false
     @AppStorage(AutoPaste.enabledKey) private var autoPaste = false
+    @AppStorage(DownloadStore.limitKey) private var limit = DownloadStore.defaultLimit
+    @AppStorage(DownloadStore.playlistFolderKey) private var playlistFolders = true
 
     var body: some View {
         NavigationStack {
             Form {
                 pastingSection
                 savingSection
+                downloadsSection
                 updatesSection
                 accountsSection
                 Section {
@@ -61,6 +65,7 @@ struct SettingsView: View {
                 Button("Sign Out of All", role: .destructive) { Task { await cookies.removeAll() } }
             }
             .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
+            .onChange(of: limit) { store.pump() }
         }
     }
 
@@ -87,6 +92,21 @@ struct SettingsView: View {
             Text("Saving")
         } footer: {
             Text("Audio goes to Files › Squirrel, or the folder chosen in Advanced. So do videos Photos can't play, like 4K AV1 on older iPhones. Deleting a download also deletes it from Photos; Remove from List keeps it there.")
+        }
+    }
+
+    // MARK: - Downloads
+
+    private var downloadsSection: some View {
+        Section {
+            Picker("Downloads at once", selection: $limit) {
+                ForEach(1...5, id: \.self) { Text("\($0)").tag($0) }
+            }
+            Toggle("Save each playlist in its own folder", isOn: $playlistFolders)
+        } header: {
+            Text("Downloads")
+        } footer: {
+            Text("The rest wait their turn. A playlist's videos that go to Photos are put in an album named after it instead.")
         }
     }
 

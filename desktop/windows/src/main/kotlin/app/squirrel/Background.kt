@@ -27,6 +27,9 @@ object Background {
     var raiseRequests by mutableStateOf(0)
         private set
 
+    /** A link from the browser extension that the main screen hasn't loaded yet */
+    var pendingLink by mutableStateOf<String?>(null)
+
     fun updateKeepRunning(value: Boolean) {
         keepRunning = value
         Preferences[KEEP_RUNNING] = value.toString()
@@ -36,25 +39,34 @@ object Background {
         windowVisible = true
         raiseRequests++
     }
+
+    /** Shows the window and loads [link] there, as if it had been pasted. */
+    fun open(link: String) {
+        // Only web links: any program on this computer can send one (see SingleInstance)
+        if (Regex("^https?://\\S+$").matches(link)) pendingLink = link
+        showWindow()
+    }
 }
 
 /**
  * One Squirrel at a time: opening it again (Start menu, desktop shortcut) while it runs in the
- * background shows the running one's window instead of starting a second copy.
+ * background shows the running one's window instead of starting a second copy. The browser
+ * extension hands links over the same way (squirrel_host.py sends "open <url>").
  */
 object SingleInstance {
     private const val PORT = 47913  // on localhost only
     private var server: ServerSocket? = null
 
-    /** False when another Squirrel is running; it's been asked to show its window. */
-    fun claim(): Boolean {
+    /** False when another Squirrel is running; it's been asked to show its window, and [link] if there's one. */
+    fun claim(link: String? = null): Boolean {
         val loopback = InetAddress.getLoopbackAddress()
         val listening = try {
             ServerSocket(PORT, 8, loopback)
         } catch (e: IOException) {
             // Taken, most likely by Squirrel: ask it to come forward. If nothing answers, the port
             // belongs to something else, so just run.
-            val asked = runCatching { Socket(loopback, PORT).use { it.getOutputStream().write("show\n".toByteArray()) } }
+            val message = if (link != null) "open $link\n" else "show\n"
+            val asked = runCatching { Socket(loopback, PORT).use { it.getOutputStream().write(message.toByteArray()) } }
             return asked.isFailure
         }
         server = listening
@@ -62,8 +74,15 @@ object SingleInstance {
             while (true) {
                 val client = runCatching { listening.accept() }.getOrNull() ?: break
                 client.use {
-                    if (it.getInputStream().bufferedReader().readLine() == "show") {
-                        SwingUtilities.invokeLater { Background.showWindow() }
+                    // One line per connection; don't let a silent one block the next
+                    it.soTimeout = 2000
+                    val line = runCatching { it.getInputStream().bufferedReader().readLine() }.getOrNull().orEmpty()
+                    when {
+                        line == "show" -> SwingUtilities.invokeLater { Background.showWindow() }
+                        line.startsWith("open ") -> {
+                            val url = line.removePrefix("open ").trim()
+                            SwingUtilities.invokeLater { Background.open(url) }
+                        }
                     }
                 }
             }

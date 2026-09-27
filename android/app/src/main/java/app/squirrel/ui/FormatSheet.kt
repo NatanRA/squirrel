@@ -8,10 +8,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayCircleOutline
 import androidx.compose.material.icons.outlined.Download
@@ -21,6 +24,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,12 +32,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.squirrel.data.DownloadItem
 import app.squirrel.data.FormatChoice
 import app.squirrel.data.VideoInfo
+import java.text.DateFormat
+import java.util.Date
 
+/**
+ * [downloaded] is an earlier download of this video, and [onWholePlaylist] opens the
+ * playlist the link also names ([VideoInfo.playlistUrl]).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FormatSheet(info: VideoInfo, onDismiss: () -> Unit, onPick: (FormatChoice) -> Unit) {
+fun FormatSheet(
+    info: VideoInfo,
+    downloaded: DownloadItem?,
+    onDismiss: () -> Unit,
+    onOpen: (DownloadItem) -> Unit,
+    onWholePlaylist: (String) -> Unit,
+    onPick: (FormatChoice) -> Unit,
+) {
     val video = info.choices.filterNot { it.isAudio }
     val audio = info.choices.filter { it.isAudio }
 
@@ -54,6 +72,29 @@ fun FormatSheet(info: VideoInfo, onDismiss: () -> Unit, onPick: (FormatChoice) -
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+            }
+            if (downloaded != null) {
+                item {
+                    Row(Modifier.padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CheckCircle, null, Modifier.size(18.dp), tint = DoneColor)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Downloaded ${DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(downloaded.createdAt))}",
+                            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
+                        )
+                        if (downloaded.contentUri != null) TextButton(onClick = { onOpen(downloaded) }) { Text("Open") }
+                    }
+                }
+            }
+            info.playlistUrl?.let { url ->
+                item {
+                    ListItem(
+                        modifier = Modifier.clickable { onWholePlaylist(url) },
+                        leadingContent = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) },
+                        headlineContent = { Text("Whole Playlist…") },
+                        supportingContent = { Text("Choose videos from the playlist this link is part of") },
+                    )
                 }
             }
             if (video.isNotEmpty()) {
@@ -94,7 +135,8 @@ private fun ChoiceRow(choice: FormatChoice, onPick: (FormatChoice) -> Unit) {
     )
 }
 
-private fun formatDuration(seconds: Double): String {
+/** "3:07", or "1:02:03" from an hour */
+fun formatDuration(seconds: Double): String {
     val total = seconds.toInt()
     val (h, m, s) = Triple(total / 3600, total / 60 % 60, total % 60)
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)

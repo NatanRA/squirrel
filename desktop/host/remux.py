@@ -63,12 +63,24 @@ def finish(files, out_dir, title, ext=None, audio=False, metadata=None):
     try:
         remux(files, destination, metadata)
     except Exception:
+        _remove(destination)  # the name unique_path reserved
         if len(files) != 1:
             raise
         # A format FFmpeg can't rewrap: keep the file exactly as downloaded
         destination = unique_path(out_dir, title, file_extension(files[0], audio))
-        shutil.move(files[0], destination)
+        try:
+            shutil.move(files[0], destination)  # replaces the reserved, empty file
+        except Exception:
+            _remove(destination)
+            raise
     return destination
+
+
+def _remove(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 def file_extension(path, audio):
@@ -89,17 +101,31 @@ def file_extension(path, audio):
 
 
 _ILLEGAL = set('/\\:?%*|"<>')
+# Names Windows won't create a file or folder with, whatever the extension
+_RESERVED = {'con', 'prn', 'aux', 'nul', *(f'com{i}' for i in range(1, 10)), *(f'lpt{i}' for i in range(1, 10))}
+
+
+def safe_name(title, limit=120, fallback='Download'):
+    """``title`` as a file or folder name that works on macOS, Windows and Linux."""
+    name = ''.join(' ' if c in _ILLEGAL or ord(c) < 32 else c for c in title or '')
+    name = ' '.join(name.split())[:limit].strip(' .')
+    if name.split('.')[0].lower() in _RESERVED:
+        name = f'{name} _'
+    return name or fallback
 
 
 def unique_path(folder, title, ext):
-    base = ''.join(' ' if c in _ILLEGAL or ord(c) < 32 else c for c in title).strip(' .')
-    base = base[:120] or 'Download'
-    path = os.path.join(folder, f'{base}.{ext}')
-    counter = 2
-    while os.path.exists(path):
-        path = os.path.join(folder, f'{base} ({counter}).{ext}')
-        counter += 1
-    return path
+    """A new file name in ``folder``, created empty right away so parallel downloads of
+    same-titled videos can't pick the same one; the caller replaces or removes it."""
+    base = safe_name(title)
+    counter = 1
+    while True:
+        path = os.path.join(folder, f'{base}.{ext}' if counter == 1 else f'{base} ({counter}).{ext}')
+        try:
+            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return path
+        except FileExistsError:
+            counter += 1
 
 
 def remove_tree(path):

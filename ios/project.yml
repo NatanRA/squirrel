@@ -76,8 +76,8 @@ targets:
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         NSPhotoLibraryAddUsageDescription: Save downloaded videos to your photo library.
-        # Read access is only asked for when deleting a download that's in Photos
-        NSPhotoLibraryUsageDescription: Delete videos from your photo library when you delete them in Squirrel.
+        # Full access is only asked for to put a playlist in an album, or delete a download that's in Photos
+        NSPhotoLibraryUsageDescription: Put each playlist's videos in an album of its own, and delete videos from your photo library when you delete them in Squirrel.
         ITSAppUsesNonExemptEncryption: false
         # iOS 26 continued-processing tasks for downloads (see BackgroundContinuation.swift)
         BGTaskSchedulerPermittedIdentifiers:

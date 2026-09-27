@@ -1,4 +1,4 @@
-<p align="center"><img src="branding/icon.svg" width="96" alt=""></p>
+<p align="center"><img src="branding/icon-rounded.svg" width="96" alt=""></p>
 
 # Squirrel
 

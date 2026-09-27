@@ -27,4 +27,5 @@ python3 branding/squirrel.py && python3 branding/render_icons.py
 
 `squirrel.py` writes `icon.svg`, `mark.svg`, Android's launcher, themed-icon and notification
 drawables, and the `SquirrelArt` shape files for the launch animation. `render_icons.py` then
-writes the iOS, Mac, Windows and extension icons from `icon.svg`.
+writes the iOS, Mac, Windows and extension icons from `icon.svg`, and `icon-rounded.svg`, the
+rounded one at the top of the main README.

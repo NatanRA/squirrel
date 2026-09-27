@@ -58,6 +58,11 @@ for points in (16, 32, 128, 256, 512):
 with open(os.path.join(REPO, *mac_dir, 'Contents.json'), 'w') as f:
     f.write('{"images":[' + ','.join(images) + '],"info":{"author":"xcode","version":1}}\n')
 
+# README: rounded like an iOS home screen icon (corners at about 22.4% of the width)
+with open(os.path.join(HERE, 'icon-rounded.svg'), 'w') as f:
+    f.write(rounded(ICON, radius=229))
+print('wrote branding/icon-rounded.svg')
+
 # Windows and the browser extension: a softly rounded square
 soft = rounded(ICON, radius=200)
 win_dir = ('desktop', 'windows', 'src', 'main', 'resources')

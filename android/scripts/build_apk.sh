@@ -8,7 +8,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 [ -f local.properties ] || echo "sdk.dir=${ANDROID_HOME:-$HOME/Library/Android/sdk}" > local.properties
-[ -f app/src/main/cpp/ffmpeg/arm64-v8a/lib/libavformat.a ] || ./scripts/build_ffmpeg.sh
+# (One from before MP3 support has no LAME and lacks what Remux.c now calls)
+[ -f app/src/main/cpp/ffmpeg/arm64-v8a/lib/libmp3lame.a ] || ./scripts/build_ffmpeg.sh
 
 ./gradlew assembleRelease --console=plain -q \
     ${APP_VERSION:+-PappVersion=$APP_VERSION} ${APP_BUILD:+-PappBuild=$APP_BUILD}

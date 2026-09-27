@@ -126,7 +126,7 @@ class DownloadService : Service() {
     }
 
     private fun status(item: DownloadItem, progress: LiveProgress?) = when (item.state) {
-        DownloadState.MERGING -> "Finishing…"
+        DownloadState.MERGING -> if (item.choice.convert == "mp3") "Converting to MP3…" else "Finishing…"
         DownloadState.DOWNLOADING -> progress?.summary(this) ?: "Downloading…"
         else -> "Preparing…"
     }

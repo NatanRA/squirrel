@@ -18,6 +18,8 @@ struct SettingsView: View {
     @AppStorage(AutoPaste.enabledKey) private var autoPaste = false
     @AppStorage(DownloadStore.limitKey) private var limit = DownloadStore.defaultLimit
     @AppStorage(DownloadStore.playlistFolderKey) private var playlistFolders = true
+    @AppStorage(SubtitleSettings.enabledKey) private var subtitles = false
+    @AppStorage(SubtitleSettings.autoCaptionsKey) private var autoCaptions = false
 
     var body: some View {
         NavigationStack {
@@ -25,6 +27,7 @@ struct SettingsView: View {
                 pastingSection
                 savingSection
                 downloadsSection
+                subtitlesSection
                 updatesSection
                 accountsSection
                 Section {
@@ -110,6 +113,27 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Subtitles
+
+    /// "English and Portuguese": the languages subtitles are fetched in
+    private static var languageNames: String {
+        SubtitleSettings.languages
+            .map { Locale.current.localizedString(forLanguageCode: $0) ?? $0 }
+            .formatted(.list(type: .and))
+    }
+
+    private var subtitlesSection: some View {
+        Section {
+            Toggle("Add Subtitles to Videos", isOn: $subtitles)
+            Toggle("Include Automatic Captions", isOn: $autoCaptions)
+                .disabled(!subtitles)
+        } header: {
+            Text("Subtitles")
+        } footer: {
+            Text("In \(Self.languageNames), when a video has them. Automatic captions are the site's own, in the video's language. The subtitles show in the player's subtitle menu.")
+        }
+    }
+
     // MARK: - Updates
 
     private var updatesSection: some View {
@@ -181,7 +205,7 @@ struct SettingsView: View {
         } header: {
             Text("About")
         } footer: {
-            Text("Squirrel is free software under the GPL 3.0, built on yt-dlp (public domain), FFmpeg (LGPL 2.1) and Python. It isn't affiliated with YouTube or any site it downloads from.")
+            Text("Squirrel is free software under the GPL 3.0, built on yt-dlp (public domain), FFmpeg (LGPL 2.1), LAME (LGPL 2.0) and Python. It isn't affiliated with YouTube or any site it downloads from.")
         }
     }
 

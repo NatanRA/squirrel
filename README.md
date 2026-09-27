@@ -13,7 +13,7 @@ links to the desktop app.
 | UI | SwiftUI | Jetpack Compose (Material 3) | SwiftUI | Compose Desktop (Material 3) |
 | Python | CPython 3.14 via [Python-Apple-support](https://github.com/beeware/Python-Apple-support) | CPython 3.14 via [Chaquopy](https://chaquo.com/chaquopy/) | CPython 3.14 via [python-build-standalone](https://github.com/astral-sh/python-build-standalone) | Same |
 | YouTube's JS challenges | JavaScriptCore | V8 via Jetpack JavaScriptEngine | JavaScriptCore | [QuickJS-ng](https://github.com/quickjs-ng/quickjs) |
-| Merging streams | Embedded FFmpeg (remux only) | Same FFmpeg code via JNI | Same FFmpeg code as a library | Same |
+| Merging streams, subtitles, MP3 | Embedded FFmpeg (+ LAME) | Same FFmpeg code via JNI | Same FFmpeg code as a library | Same |
 | Where files go | Photos (videos), Files › Squirrel (audio) | Movies/Squirrel (Gallery), Music/Squirrel | ~/Downloads/Squirrel (you can change it) | Same |
 | Getting links in | Paste, **share sheet**, `squirrel://` URL | Paste, **share sheet**, `squirrel://` URL | Paste, menu bar, **right-click** in browsers, **Share menu**, Services | Paste, **right-click** in browsers |
 | Package | Ad-hoc signed IPA (~25 MB) | APK per CPU type (~21 MB) | Disk image per CPU type | Installer (Inno Setup) |
@@ -46,7 +46,8 @@ shared/pybridge/   Python used by every app
   ytdl_updater.py    Installs newer yt-dlp releases from PyPI, falling back to the built-in copy
   tests/             Offline tests: python3 -m unittest discover shared/pybridge/tests
 shared/native/     C used by every app
-  Remux.c            Merges/rewraps streams into one file with FFmpeg's libraries, no re-encoding
+  Remux.c            Merges/rewraps streams into one file with FFmpeg's libraries, adds subtitles, makes MP3s
+  build_lame.sh      Builds LAME, the MP3 encoder, for each platform's FFmpeg
 ios/               Xcode project (XcodeGen), Swift sources, build scripts
 android/           Gradle project, Kotlin sources, JNI glue, build scripts
 desktop/
@@ -73,11 +74,13 @@ shells out to:
   solver in the platform's own engine. Both engines return identical answers on YouTube's current
   player; V8 takes about 0.3 s and JavaScriptCore about 1 s.
 - **The ffmpeg command-line tool.** yt-dlp downloads the video and audio streams separately, and
-  `Remux.c` merges them with a minimal FFmpeg build that has no encoders or decoders (LGPL-2.1).
+  `Remux.c` merges them with a minimal FFmpeg build (LGPL), without re-encoding them.
   It also rewraps single files, which fixes broken duration headers and turns HLS/MPEG-TS
   downloads into normal MP4s. Every codec is available, including YouTube's 1440p and 4K
   (AV1/VP9 only). Each app reports which codecs its device can play, and the rest are labelled
-  "Plays in VLC". Files are tagged with title, artist, year and source URL.
+  "Plays in VLC". Files are tagged with title, artist, year and source URL. The only encoding
+  is for text: subtitles become MP4's own subtitle tracks, and audio becomes MP3 on request
+  (with LAME, at about 190 kbps). That adds about 1 MB to each app.
 
 The desktop apps use the same pieces rather than a separate yt-dlp GUI, so every platform picks
 formats and names files the same way. There, the bridge runs in a separate Python process: the
@@ -193,6 +196,13 @@ release, run the workflow from the Actions tab with that release's tag.
   or Audio. Videos you already have start unticked. Each playlist gets a folder of its own (a Photos
   album on iOS); turn that off in Settings. A link to one video of a YouTube playlist offers
   **Whole Playlist**. In a browser, a playlist link opens the app to choose.
+- **MP3:** pick **MP3** under Audio Only (or for a whole playlist) to get the audio re-encoded as an
+  MP3 for players that don't take M4A. **Audio** keeps the original, which is smaller and loses
+  nothing.
+- **Subtitles:** turn on Settings › **Add subtitles to videos** to embed them as tracks you can
+  switch on in the player, in the languages your device is set to, when a video has them. **Include
+  automatic captions** adds the site's own automatic ones, in the video's language only (never
+  machine translations).
 - **Downloads wait their turn:** Settings › **Downloads at once** (3 on computers, 2 on phones).
   Downloads still waiting when Squirrel quit don't start again until you tap **Resume**.
 - Tap a finished download to play it. Long-press for **Share**, **Retry**, **Delete** and more.
@@ -234,8 +244,7 @@ release, run the workflow from the Actions tab with that release's tag.
   can't run them). On older versions, downloads get about 30 seconds in the background. Sideloading
   tools that rewrite the bundle ID, such as AltStore, disable this feature.
 - **Google may refuse sign-in** in the in-app browser. If so, use **Import cookies.txt**.
-- Nothing is re-encoded, so converting to MP3, and embedding subtitles and cover art, aren't
-  supported yet.
+- Cover art isn't embedded yet.
 - The Mac app isn't notarized and the Windows installer isn't code-signed, so both show a warning
   the first time.
 - Debug builds log yt-dlp's verbose output: the system log on iOS, and logcat `python.stdout` on

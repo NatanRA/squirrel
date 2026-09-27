@@ -11,6 +11,8 @@ struct FormatChoice: Identifiable, Hashable, Codable {
     let ext: String?
     /// False when only third-party players like VLC can play it.
     let playable: Bool?
+    /// "mp3": the audio is re-encoded after downloading
+    let convert: String?
 
     var isAudio: Bool { kind == "audio" }
 
@@ -23,6 +25,7 @@ struct FormatChoice: Identifiable, Hashable, Codable {
         self.kind = dict["kind"] as? String ?? "video"
         self.ext = dict["ext"] as? String
         self.playable = dict["playable"] as? Bool
+        self.convert = dict["convert"] as? String
     }
 
     /// Stands in for a playlist item's choice until the engine picks one from the video's formats.
@@ -34,6 +37,7 @@ struct FormatChoice: Identifiable, Hashable, Codable {
         kind = target.kind
         ext = nil
         playable = nil
+        convert = target.convert
     }
 }
 
@@ -42,18 +46,22 @@ struct FormatChoice: Identifiable, Hashable, Codable {
 struct DownloadTarget: Codable, Hashable, Identifiable {
     var kind: String
     var maxHeight: Int?
+    /// "mp3": the audio converted to MP3
+    var convert: String?
 
     static let best = DownloadTarget(kind: "video")
     static let audio = DownloadTarget(kind: "audio")
+    static let mp3 = DownloadTarget(kind: "audio", convert: "mp3")
     static let all = [best, DownloadTarget(kind: "video", maxHeight: 1080), DownloadTarget(kind: "video", maxHeight: 720),
-                      DownloadTarget(kind: "video", maxHeight: 480), audio]
+                      DownloadTarget(kind: "video", maxHeight: 480), audio, mp3]
 
-    var id: String { kind == "audio" ? "audio" : maxHeight.map { "v\($0)" } ?? "best" }
-    var label: String { kind == "audio" ? "Audio" : maxHeight.map { "\($0)p" } ?? "Best" }
+    var id: String { convert ?? (kind == "audio" ? "audio" : maxHeight.map { "v\($0)" } ?? "best") }
+    var label: String { convert == "mp3" ? "MP3" : kind == "audio" ? "Audio" : maxHeight.map { "\($0)p" } ?? "Best" }
 
     var arguments: [String: Any] {
         var args: [String: Any] = ["kind": kind]
         if let maxHeight { args["max_height"] = maxHeight }
+        if let convert { args["convert"] = convert }
         return args
     }
 }
@@ -70,6 +78,9 @@ struct VideoInfo: Identifiable {
     var key: String?
     /// The playlist a YouTube link also names, for "Whole Playlist"
     var playlistURL: String?
+    /// Languages it has subtitles in ("en"), and automatic captions in (its own language)
+    var subtitleLanguages: [String] = []
+    var captionLanguages: [String] = []
 }
 
 struct PlaylistEntry: Identifiable, Hashable {
@@ -297,7 +308,9 @@ final class DownloadStore {
             thumbnail: (result["thumbnail"] as? String).flatMap(URL.init(string:)),
             choices: choices,
             key: result["key"] as? String,
-            playlistURL: result["playlist_url"] as? String))
+            playlistURL: result["playlist_url"] as? String,
+            subtitleLanguages: (result["subtitles"] as? [String: Any])?["languages"] as? [String] ?? [],
+            captionLanguages: (result["subtitles"] as? [String: Any])?["auto"] as? [String] ?? []))
     }
 
     func download(_ info: VideoInfo, choice: FormatChoice) {
@@ -479,6 +492,7 @@ final class DownloadStore {
             args["format_ids"] = item.choice.formatIDs
             args["ext"] = item.choice.ext ?? ""
             args["audio"] = item.choice.isAudio
+            if let convert = item.choice.convert { args["convert"] = convert }
         }
         if let pick = item.pick { args["playlist_index"] = pick }
         if let folder = item.playlist?.folder { args["subfolder"] = folder }
@@ -528,7 +542,7 @@ final class DownloadStore {
         guard let state = items.first(where: { $0.id == id })?.state, state.isActive else { return }
         if status == "downloading", state != .downloading {
             update(id) { $0.state = .downloading }
-        } else if status == "merging", state != .merging {
+        } else if status == "merging" || status == "converting", state != .merging {
             update(id) { $0.state = .merging }
         }
     }

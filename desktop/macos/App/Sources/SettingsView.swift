@@ -28,7 +28,15 @@ private struct GeneralSettings: View {
     @AppStorage(Background.keepRunningKey) private var keepRunning = true
     @AppStorage(Notifier.enabledKey) private var notify = true
 
+    /// "English and Portuguese": the languages subtitles are fetched in
+    private static var languageNames: String {
+        AppSettings.subtitleLanguages
+            .map { Locale.current.localizedString(forLanguageCode: $0) ?? $0 }
+            .formatted(.list(type: .and))
+    }
+
     var body: some View {
+        @Bindable var settings = settings
         Form {
             Section("Downloads") {
                 LabeledContent("Save to") {
@@ -45,6 +53,14 @@ private struct GeneralSettings: View {
                 }
                 Toggle("Save each playlist in its own folder", isOn: $playlistFolders)
                 Toggle("Notify me when downloads finish", isOn: $notify)
+            }
+            Section {
+                Toggle("Add subtitles to videos", isOn: $settings.subtitles)
+                Toggle("Include automatic captions", isOn: $settings.autoCaptions)
+                    .disabled(!settings.subtitles)
+            } footer: {
+                Text("In \(Self.languageNames), when a video has them. Automatic captions are the site's own, in the video's language. The subtitles show in the player's subtitle menu.")
+                    .foregroundStyle(.secondary)
             }
             Section {
                 Toggle("Show Squirrel in the menu bar", isOn: $showMenuBar)
@@ -109,7 +125,7 @@ private struct AboutSettings: View {
                 Link("Open-Source Licenses", destination: Self.sourceURL.appending(path: "blob/main/THIRD_PARTY_NOTICES.md"))
                 Link("Source Code", destination: Self.sourceURL)
             } footer: {
-                Text("Squirrel is free software under the GPL 3.0, built on yt-dlp (public domain), FFmpeg (LGPL 2.1) and Python. It isn't affiliated with YouTube or any site it downloads from.")
+                Text("Squirrel is free software under the GPL 3.0, built on yt-dlp (public domain), FFmpeg (LGPL 2.1), LAME (LGPL 2.0) and Python. It isn't affiliated with YouTube or any site it downloads from.")
                     .foregroundStyle(.secondary)
             }
         }

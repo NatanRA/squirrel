@@ -1,5 +1,6 @@
 package app.squirrel.ui
 
+import android.icu.text.ListFormatter
 import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -48,6 +49,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
@@ -87,6 +89,12 @@ fun SettingsScreen(onBack: () -> Unit, onAdvanced: () -> Unit, onSignIn: (LoginS
     var limit by remember { mutableIntStateOf(app.repository.limit) }
     var limitMenu by remember { mutableStateOf(false) }
     var playlistFolders by remember { mutableStateOf(app.repository.playlistFolders) }
+    var subtitles by remember { mutableStateOf(app.repository.subtitles) }
+    var autoCaptions by remember { mutableStateOf(app.repository.autoCaptions) }
+    // "English and Portuguese": the languages subtitles are fetched in
+    val languageNames = remember {
+        ListFormatter.getInstance().format(DownloadRepository.subtitleLanguages.map(DownloadRepository::languageName))
+    }
 
     LaunchedEffect(Unit) { app.updates.refreshStatus() }
 
@@ -125,6 +133,28 @@ fun SettingsScreen(onBack: () -> Unit, onAdvanced: () -> Unit, onSignIn: (LoginS
                 trailingContent = {
                     Switch(playlistFolders, { playlistFolders = it; app.repository.playlistFolders = it })
                 },
+            )
+
+            HorizontalDivider()
+            Header("Subtitles")
+            ListItem(
+                headlineContent = { Text("Add Subtitles to Videos") },
+                trailingContent = { Switch(subtitles, { subtitles = it; app.repository.subtitles = it }) },
+            )
+            ListItem(
+                headlineContent = {
+                    Text(
+                        "Include Automatic Captions",
+                        color = if (subtitles) Color.Unspecified else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    )
+                },
+                trailingContent = {
+                    Switch(autoCaptions, { autoCaptions = it; app.repository.autoCaptions = it }, enabled = subtitles)
+                },
+            )
+            Footer(
+                "In $languageNames, when a video has them. Automatic captions are the site's own, in the video's " +
+                    "language. The subtitles show in players with a subtitle menu, like VLC.",
             )
 
             HorizontalDivider()
@@ -268,8 +298,8 @@ private fun AboutSection() {
         trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
     )
     Footer(
-        "Squirrel is free software under the GPL 3.0, built on yt-dlp (public domain), FFmpeg (LGPL 2.1) " +
-            "and Python. It isn't affiliated with YouTube or any site it downloads from.",
+        "Squirrel is free software under the GPL 3.0, built on yt-dlp (public domain), FFmpeg (LGPL 2.1), " +
+            "LAME (LGPL 2.0) and Python. It isn't affiliated with YouTube or any site it downloads from.",
     )
 }
 

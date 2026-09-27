@@ -11,6 +11,8 @@ struct FormatChoice: Identifiable, Hashable, Codable {
     let ext: String?
     /// False when only third-party players like VLC can play it (e.g. AV1 without hardware decode).
     let playable: Bool?
+    /// "mp3": the audio is re-encoded after downloading
+    let convert: String?
 
     var isAudio: Bool { kind == "audio" }
 
@@ -23,6 +25,7 @@ struct FormatChoice: Identifiable, Hashable, Codable {
         self.kind = dict["kind"] as? String ?? "video"
         self.ext = dict["ext"] as? String
         self.playable = dict["playable"] as? Bool
+        self.convert = dict["convert"] as? String
     }
 
     /// Stands in for a playlist item's choice until the bridge picks one from the video's formats.
@@ -34,6 +37,7 @@ struct FormatChoice: Identifiable, Hashable, Codable {
         kind = target.kind
         ext = nil
         playable = nil
+        convert = target.convert
     }
 }
 
@@ -42,18 +46,22 @@ struct FormatChoice: Identifiable, Hashable, Codable {
 struct DownloadTarget: Codable, Hashable, Identifiable {
     var kind: String
     var maxHeight: Int?
+    /// "mp3": the audio converted to MP3
+    var convert: String?
 
     static let best = DownloadTarget(kind: "video")
     static let audio = DownloadTarget(kind: "audio")
+    static let mp3 = DownloadTarget(kind: "audio", convert: "mp3")
     static let all = [best, DownloadTarget(kind: "video", maxHeight: 1080), DownloadTarget(kind: "video", maxHeight: 720),
-                      DownloadTarget(kind: "video", maxHeight: 480), audio]
+                      DownloadTarget(kind: "video", maxHeight: 480), audio, mp3]
 
-    var id: String { kind == "audio" ? "audio" : maxHeight.map { "v\($0)" } ?? "best" }
-    var label: String { kind == "audio" ? "Audio" : maxHeight.map { "\($0)p" } ?? "Best" }
+    var id: String { convert ?? (kind == "audio" ? "audio" : maxHeight.map { "v\($0)" } ?? "best") }
+    var label: String { convert == "mp3" ? "MP3" : kind == "audio" ? "Audio" : maxHeight.map { "\($0)p" } ?? "Best" }
 
     var arguments: [String: Any] {
         var args: [String: Any] = ["kind": kind]
         if let maxHeight { args["max_height"] = maxHeight }
+        if let convert { args["convert"] = convert }
         return args
     }
 }
@@ -70,6 +78,9 @@ struct VideoInfo: Identifiable {
     var key: String?
     /// The playlist a YouTube link also names, for "Whole Playlist"
     var playlistURL: String?
+    /// Languages it has subtitles in ("en"), and automatic captions in (its own language)
+    var subtitleLanguages: [String] = []
+    var captionLanguages: [String] = []
 }
 
 struct PlaylistEntry: Identifiable, Hashable {
@@ -227,6 +238,23 @@ enum SaveSettings {
     }
 }
 
+/// "Subtitles" settings (see SettingsView): subtitles added to videos, in the languages this
+/// iPhone is set to.
+enum SubtitleSettings {
+    static let enabledKey = "subtitles.enabled"
+    static let autoCaptionsKey = "subtitles.autoCaptions"
+
+    static var enabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
+    /// Also the site's automatic captions, in the video's own language
+    static var autoCaptions: Bool { UserDefaults.standard.bool(forKey: autoCaptionsKey) }
+
+    /// "en", "pt": the languages in Settings › General › Language & Region, in order
+    static var languages: [String] {
+        let codes = Locale.preferredLanguages.compactMap { Locale(identifier: $0).language.languageCode?.identifier }
+        return Array(NSOrderedSet(array: codes.isEmpty ? ["en"] : codes)) as? [String] ?? ["en"]
+    }
+}
+
 /// Live, non-persisted progress for an active download.
 struct LiveProgress {
     var downloaded: Double = 0
@@ -367,7 +395,9 @@ final class DownloadStore {
             thumbnail: (result["thumbnail"] as? String).flatMap(URL.init(string:)),
             choices: choices,
             key: result["key"] as? String,
-            playlistURL: result["playlist_url"] as? String))
+            playlistURL: result["playlist_url"] as? String,
+            subtitleLanguages: (result["subtitles"] as? [String: Any])?["languages"] as? [String] ?? [],
+            captionLanguages: (result["subtitles"] as? [String: Any])?["auto"] as? [String] ?? []))
     }
 
     func download(_ info: VideoInfo, choice: FormatChoice) {
@@ -668,7 +698,7 @@ final class DownloadStore {
         if covered.count == 1, let first {
             let subtitle = switch first.state {
             case .downloading: live[first.id]?.summary ?? "Downloading…"
-            case .merging: "Finishing…"
+            case .merging: first.choice.convert == "mp3" ? "Converting to MP3…" : "Finishing…"
             default: "Starting…"
             }
             return (first.title, subtitle, fraction)
@@ -727,6 +757,10 @@ final class DownloadStore {
             args["format_ids"] = item.choice.formatIDs
         }
         if let pick = item.pick { args["playlist_index"] = pick }
+        // Subtitles to embed in videos; the bridge leaves them out when a playlist item comes to audio
+        if SubtitleSettings.enabled, item.target != nil || !item.choice.isAudio {
+            args["subtitles"] = ["languages": SubtitleSettings.languages, "auto": SubtitleSettings.autoCaptions] as [String: Any]
+        }
 
         do {
             let result = try await PythonRuntime.shared.call("download", args)
@@ -738,27 +772,40 @@ final class DownloadStore {
             // What "Best" or "720p" came to for this video, which decides the container and Photos below
             let choice = (result["choice"] as? [String: Any]).flatMap(FormatChoice.init) ?? item.choice
 
-            // Merge or rewrap with FFmpeg into the container the format picker chose
+            // Merge or rewrap with FFmpeg into the container the format picker chose, or make the MP3
             update(id) {
                 $0.state = .merging
                 $0.choice = choice
                 $0.key = result["key"] as? String ?? $0.key
             }
             updateBackground()
-            let container = choice.ext.flatMap { Remuxer.canWrite($0) ? $0 : nil }
-                ?? (choice.isAudio ? "m4a" : "mp4")
+            let convertsToMP3 = choice.convert == "mp3"
+            let container = convertsToMP3 ? "mp3"
+                : choice.ext.flatMap { Remuxer.canWrite($0) ? $0 : nil } ?? (choice.isAudio ? "m4a" : "mp4")
             let metadata = [
                 "title": title,
                 "artist": result["artist"] as? String ?? "",
                 "date": result["date"] as? String ?? "",
                 "comment": result["url"] as? String ?? item.sourceURL,
             ]
+            // The subtitle files the bridge fetched, added to the video as tracks
+            let subtitles = (result["subtitles"] as? [[String: Any]] ?? []).compactMap { subtitle in
+                (subtitle["path"] as? String).map {
+                    Remuxer.Subtitle(file: URL(fileURLWithPath: $0), language: subtitle["lang"] as? String,
+                                     name: subtitle["name"] as? String)
+                }
+            }
             var destination = Self.uniqueDestination(title: title, ext: container)
             do {
-                try await Remuxer.remux(files, to: destination, metadata: metadata)
+                if convertsToMP3 {
+                    try await Remuxer.convertToMP3(files[0], to: destination, metadata: metadata)
+                } else {
+                    try await Remuxer.remux(files, to: destination, subtitles: subtitles, metadata: metadata)
+                }
             } catch {
                 try? FileManager.default.removeItem(at: destination)  // the name uniqueDestination reserved
-                guard files.count == 1 else { throw error }
+                // Keeping the download as it is wouldn't be the MP3 that was asked for
+                guard files.count == 1, !convertsToMP3 else { throw error }
                 // A format FFmpeg can't rewrap: keep the file exactly as downloaded
                 destination = Self.uniqueDestination(
                     title: title, ext: Self.fileExtension(for: files[0], isAudio: choice.isAudio))

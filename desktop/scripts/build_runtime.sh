@@ -36,7 +36,8 @@ case "$TARGET" in
 esac
 
 REMUX="$BUILD/remux-$TARGET"
-if [ ! -d "$REMUX" ]; then
+# One from before MP3 support has no LAME licence and lacks the functions the host calls
+if [ ! -f "$REMUX/LICENSE-LAME" ]; then
     "$REPO/desktop/scripts/build_remux.sh" "$TARGET"
 fi
 

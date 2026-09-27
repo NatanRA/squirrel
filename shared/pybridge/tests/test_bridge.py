@@ -59,13 +59,14 @@ class FakeYoutubeDL(yt_dlp.YoutubeDL):
 
     def dl(self, name, info, subtitle=False, test=False):
         with open(name, 'wb') as f:
-            f.write(info['format_id'].encode())
+            f.write(b'WEBVTT\n' if subtitle else info['format_id'].encode())
         for hook in self._progress_hooks:
             hook({'status': 'finished', 'filename': name, 'info_dict': info})
         return True, True
 
 
-def video(video_id, heights=(1080, 720, 360), vcodec='avc1.640028', audio=True, url=None, title=None):
+def video(video_id, heights=(1080, 720, 360), vcodec='avc1.640028', audio=True, url=None, title=None,
+          subtitles=None, captions=None):
     formats = [{'format_id': f'v{h}', 'url': f'https://example.invalid/{video_id}/{h}.mp4', 'ext': 'mp4',
                 'vcodec': vcodec, 'acodec': 'none', 'width': h * 16 // 9, 'height': h, 'fps': 30, 'tbr': h}
                for h in heights]
@@ -73,6 +74,10 @@ def video(video_id, heights=(1080, 720, 360), vcodec='avc1.640028', audio=True, 
         formats.append({'format_id': 'a', 'url': f'https://example.invalid/{video_id}/a.m4a', 'ext': 'm4a',
                         'vcodec': 'none', 'acodec': 'mp4a.40.2', 'abr': 128})
     info = {'id': video_id, 'title': title or f'Video {video_id}', 'formats': formats}
+    for field, languages in (('subtitles', subtitles), ('automatic_captions', captions)):
+        if languages:
+            info[field] = {k: [{'ext': 'vtt', 'url': f'https://example.invalid/{video_id}/{k}.vtt', 'name': name}]
+                           for k, name in languages.items()}
     if url:
         info['webpage_url'] = url
     return info
@@ -131,6 +136,16 @@ class ResolveTargetTests(unittest.TestCase):
         choices = self.choices((1080, True))
         self.assertEqual(ytdl_bridge._resolve_target(choices, {'kind': 'audio'})['id'], 'audio')
 
+    def test_mp3(self):
+        choices = self.choices((1080, True)) + [
+            {'id': 'mp3', 'kind': 'audio', 'height': 0, 'playable': True, 'format_ids': ['a'], 'convert': 'mp3'}]
+        self.assertEqual(ytdl_bridge._resolve_target(choices, {'kind': 'audio', 'convert': 'mp3'})['id'], 'mp3')
+        self.assertEqual(ytdl_bridge._resolve_target(choices, {'kind': 'audio'})['id'], 'audio')
+
+    def test_mp3_when_the_audio_already_is(self):
+        choices = self.choices((1080, True))
+        self.assertEqual(ytdl_bridge._resolve_target(choices, {'kind': 'audio', 'convert': 'mp3'})['id'], 'audio')
+
     def test_audio_without_audio_stream_takes_smallest_video(self):
         choices = self.choices((1080, True), (360, True), audio=False)
         self.assertEqual(ytdl_bridge._resolve_target(choices, {'kind': 'audio'})['id'], 'v360')
@@ -142,6 +157,25 @@ class ResolveTargetTests(unittest.TestCase):
     def test_nothing(self):
         with self.assertRaises(ValueError):
             ytdl_bridge._resolve_target([], {'kind': 'video'})
+
+
+class SubtitleTests(unittest.TestCase):
+    info = {'subtitles': {'en-GB': [], 'pt': [], 'live_chat': []},
+            'automatic_captions': {'de': [], 'de-orig': [], 'fr': [], 'en': []}}
+
+    def test_people_written_first(self):
+        self.assertEqual(ytdl_bridge._subtitle_tracks(self.info, ['en-US', 'pt-PT'], auto=True), ['en-GB', 'pt'])
+
+    def test_automatic_only_in_the_videos_language(self):
+        self.assertEqual(ytdl_bridge._subtitle_tracks(self.info, ['de', 'fr'], auto=True), ['de-orig'])
+        self.assertEqual(ytdl_bridge._subtitle_tracks(self.info, ['de'], auto=False), [])
+
+    def test_old_language_codes(self):
+        info = {'subtitles': {'iw': [], 'in': []}}
+        self.assertEqual(ytdl_bridge._subtitle_tracks(info, ['he-IL', 'id'], auto=False), ['iw', 'in'])
+
+    def test_summary(self):
+        self.assertEqual(ytdl_bridge._subtitle_summary(self.info), {'languages': ['en', 'pt'], 'auto': ['de']})
 
 
 class PlaylistHintTests(unittest.TestCase):
@@ -178,7 +212,8 @@ class ExtractTests(BridgeTestCase):
         self.assertTrue(result['ok'], result)
         self.assertEqual(result['type'], 'video')
         self.assertEqual(result['key'], 'fake a')
-        self.assertEqual([c['id'] for c in result['choices']], ['v1080', 'v720', 'v360', 'audio'])
+        self.assertEqual([c['id'] for c in result['choices']], ['v1080', 'v720', 'v360', 'audio', 'mp3'])
+        self.assertEqual(result['choices'][-1]['convert'], 'mp3')
 
     def test_playlist_items(self):
         self.add_videos('a', 'b', 'c')
@@ -290,6 +325,24 @@ class DownloadTests(BridgeTestCase):
         self.assertEqual(result['choice']['id'], 'v1080')
         self.assertEqual(sorted(os.path.basename(f).rsplit('.f', 1)[1] for f in result['files']),
                          ['a.m4a', 'v1080.mp4'])
+
+    def test_subtitles(self):
+        FIXTURES['fake://video/a'] = video('a', subtitles={'en': 'English', 'es': 'Spanish'},
+                                           captions={'fr': 'French', 'fr-orig': 'French (Original)'})
+        result, _ = self.download(url='fake://video/a', format_ids=['v720', 'a'],
+                                  subtitles={'languages': ['en', 'fr'], 'auto': True})
+        self.assertTrue(result['ok'], result)
+        self.assertEqual([(t['lang'], t['name']) for t in result['subtitles']],
+                         [('eng', 'English'), ('fra', 'French (auto-generated)')])
+        self.assertTrue(all(os.path.exists(t['path']) for t in result['subtitles']))
+        self.assertEqual(len(result['files']), 2)  # the subtitles aren't media parts
+
+    def test_no_subtitles_for_audio(self):
+        FIXTURES['fake://video/a'] = video('a', subtitles={'en': 'English'})
+        result, _ = self.download(url='fake://video/a', target={'kind': 'audio'},
+                                  subtitles={'languages': ['en'], 'auto': False})
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(result['subtitles'], [])
 
     def test_audio_target(self):
         self.add_videos('a')

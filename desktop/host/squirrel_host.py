@@ -116,7 +116,7 @@ def _has_js_host():
 
 # region: commands
 
-_phases: dict[str, str] = {}  # job id -> "merging" once yt-dlp is done
+_phases: dict[str, str] = {}  # job id -> "merging" (or "converting") once yt-dlp is done
 _early_cancels: set[str] = set()  # cancelled before yt-dlp registered the job
 
 
@@ -135,14 +135,16 @@ def cmd_extract(args):
 def cmd_download(args):
     """Download, merge and save one choice; returns the saved file's path.
 
-    args: url, title, job_id (optional), and either format_ids + ext + audio (a
-    preset from extract) or target (a playlist item's quality, resolved by the
-    bridge). Optional: playlist_index (an item of a multi-video link) and
-    subfolder (a playlist's own folder inside the download folder).
+    args: url, title, job_id (optional), and either format_ids + ext + audio +
+    convert (a preset from extract) or target (a playlist item's quality,
+    resolved by the bridge). Optional: playlist_index (an item of a multi-video
+    link) and subfolder (a playlist's own folder inside the download folder).
+    Videos get subtitles embedded when settings.json asks for them.
     """
     _configure()
+    settings = load_settings()
     job_id = args.get('job_id') or uuid.uuid4().hex
-    out_dir = args.get('out_dir') or load_settings()['download_dir']
+    out_dir = args.get('out_dir') or settings['download_dir']
     if args.get('subfolder'):
         out_dir = os.path.join(out_dir, remux.safe_name(args['subfolder'], limit=80, fallback='Playlist'))
     work = os.path.join(CACHE_DIR, 'work', job_id)
@@ -154,6 +156,9 @@ def cmd_download(args):
         for key in ('format_ids', 'target', 'playlist_index'):
             if args.get(key):
                 request[key] = args[key]
+        if settings.get('subtitles') and not args.get('audio'):
+            request['subtitles'] = {'languages': settings.get('subtitle_languages') or ['en'],
+                                    'auto': bool(settings.get('auto_captions'))}
         result = json.loads(ytdl_bridge.download(json.dumps(request)))
         if not result.get('ok'):
             return result
@@ -163,10 +168,14 @@ def cmd_download(args):
         choice = result.get('choice') or {}
         ext = choice.get('ext') or args.get('ext')
         audio = choice.get('kind') == 'audio' if choice else bool(args.get('audio'))
+        convert = choice.get('convert') if choice else args.get('convert')
+        if convert:
+            _phases[job_id] = 'converting'
         path = remux.finish(
             [f for f in result.get('files') or [] if f], out_dir, title, ext=ext, audio=audio,
             metadata={'title': title, 'artist': result.get('artist') or '', 'date': result.get('date') or '',
-                      'comment': result.get('url') or args['url']})
+                      'comment': result.get('url') or args['url']},
+            subtitles=result.get('subtitles') or [], convert=convert)
         return {'ok': True, 'path': path, 'title': title, 'job_id': job_id,
                 'key': result.get('key'), 'choice': result.get('choice')}
     except Exception as e:

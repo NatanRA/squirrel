@@ -439,7 +439,13 @@ private fun StatusLine(item: DownloadItem, live: LiveProgress?) {
             Spacer(Modifier.height(4.dp))
             caption(live?.summary(context) ?: "Downloading…")
         }
-        DownloadState.MERGING -> caption(if ((live?.parts ?: 1) > 1) "Merging audio and video…" else "Finishing…")
+        DownloadState.MERGING -> caption(
+            when {
+                item.choice.convert == "mp3" -> "Converting to MP3…"
+                (live?.parts ?: 1) > 1 -> "Merging audio and video…"
+                else -> "Finishing…"
+            },
+        )
         DownloadState.FINISHED -> caption(
             listOf(
                 if (item.choice.isAudio) "Audio" else item.choice.label,

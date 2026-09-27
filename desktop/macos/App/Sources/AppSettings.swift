@@ -39,6 +39,16 @@ enum CookieBrowser: String, CaseIterable, Identifiable {
 final class AppSettings {
     var downloadFolder: URL { didSet { save() } }
     var cookieBrowser: CookieBrowser { didSet { save() } }
+    /// Embed subtitles in videos, in the languages this Mac is set to
+    var subtitles: Bool { didSet { save() } }
+    /// Also the site's automatic captions, in the video's own language
+    var autoCaptions: Bool { didSet { save() } }
+
+    /// "en", "pt": the languages in System Settings › General › Language & Region, in order
+    static var subtitleLanguages: [String] {
+        let codes = Locale.preferredLanguages.compactMap { Locale(identifier: $0).language.languageCode?.identifier }
+        return Array(NSOrderedSet(array: codes.isEmpty ? ["en"] : codes)) as? [String] ?? ["en"]
+    }
 
     init() {
         let stored = (try? Data(contentsOf: AppPaths.settings))
@@ -46,6 +56,8 @@ final class AppSettings {
         downloadFolder = (stored["download_dir"] as? String).map { URL(fileURLWithPath: $0, isDirectory: true) }
             ?? AppPaths.defaultDownloads
         cookieBrowser = CookieBrowser(rawValue: stored["cookies_from_browser"] as? String ?? "") ?? .off
+        subtitles = stored["subtitles"] as? Bool ?? false
+        autoCaptions = stored["auto_captions"] as? Bool ?? false
         save()  // records what this Mac can play for the engine's format choices
     }
 
@@ -56,6 +68,9 @@ final class AppSettings {
             // Decides whether 1440p/4K (AV1-only on YouTube) counts as playable
             "av1_decode": VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1),
             "vp9_decode": false,  // QuickTime can't play VP9
+            "subtitles": subtitles,
+            "subtitle_languages": Self.subtitleLanguages,
+            "auto_captions": autoCaptions,
         ]
         do {
             try FileManager.default.createDirectory(at: AppPaths.support, withIntermediateDirectories: true)

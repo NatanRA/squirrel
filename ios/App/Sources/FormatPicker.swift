@@ -8,6 +8,8 @@ struct FormatPicker: View {
     /// Opens the playlist the link also names (`info.playlistURL`)
     var onWholePlaylist: ((String) -> Void)?
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(SubtitleSettings.enabledKey) private var subtitles = false
+    @AppStorage(SubtitleSettings.autoCaptionsKey) private var autoCaptions = false
 
     private var videoChoices: [FormatChoice] { info.choices.filter { !$0.isAudio } }
     private var audioChoices: [FormatChoice] { info.choices.filter(\.isAudio) }
@@ -37,6 +39,11 @@ struct FormatPicker: View {
                             Text([info.uploader, info.duration.map(formatDuration)].compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if let subtitleNote {
+                                Label(subtitleNote, systemImage: "captions.bubble")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                             if let downloaded {
                                 Label {
                                     Text("Downloaded \(downloaded.createdAt.formatted(date: .abbreviated, time: .omitted))")
@@ -77,6 +84,15 @@ struct FormatPicker: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    /// "With English subtitles": what Settings › Subtitles adds to a video download of this one
+    private var subtitleNote: String? {
+        guard subtitles, !videoChoices.isEmpty else { return nil }
+        let names = SubtitleSettings.languages
+            .filter { info.subtitleLanguages.contains($0) || autoCaptions && info.captionLanguages.contains($0) }
+            .map { Locale.current.localizedString(forLanguageCode: $0) ?? $0 }
+        return names.isEmpty ? nil : "With \(names.formatted(.list(type: .and))) subtitles"
     }
 
     private func row(_ choice: FormatChoice) -> some View {

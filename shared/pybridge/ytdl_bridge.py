@@ -365,6 +365,11 @@ def _presets(info):
                       'format_ids': [best_audio['format_id']], 'playable': True,
                       'detail': _detail(container.upper(), _codec(best_audio.get('acodec')),
                                         f'{abr:.0f} kbps' if abr else None, _size_text(best_audio))})
+        # The same audio re-encoded by the app (Remux.c), for players that only take MP3
+        if container != 'mp3':
+            audio.append({'id': 'mp3', 'label': 'MP3', 'kind': 'audio', 'height': 0, 'ext': 'mp3', 'convert': 'mp3',
+                          'format_ids': [best_audio['format_id']], 'playable': True,
+                          'detail': 'MP3 · about 190 kbps · converted'})
 
     if not video and not audio and formats:
         # No usable format metadata (common for generic extractors): let yt-dlp pick
@@ -375,9 +380,12 @@ def _presets(info):
 
 
 def _resolve_target(choices, target):
-    """The preset a playlist item's quality ("Best", "up to 720p", "Audio") means for this video."""
+    """The preset a playlist item's quality ("Best", "up to 720p", "Audio", "MP3") means for this video."""
     if target.get('kind') == 'audio':
-        audio = next((c for c in choices if c['kind'] == 'audio'), None)
+        # MP3 when asked for; a video whose audio already is MP3 has no separate MP3 choice
+        wanted = 'mp3' if target.get('convert') == 'mp3' else 'audio'
+        audio = (next((c for c in choices if c['id'] == wanted), None)
+                 or next((c for c in choices if c['kind'] == 'audio'), None))
         if audio:
             return audio
     videos = [c for c in choices if c['kind'] == 'video']  # highest first
@@ -389,6 +397,74 @@ def _resolve_target(choices, target):
     pool = [c for c in videos if not cap or c['height'] <= cap] or videos[-1:]
     # Rather 1080p that plays everywhere than 4K that only VLC opens
     return next((c for c in pool if c['playable']), pool[0])
+
+# endregion
+
+
+# region: subtitles
+
+# Old codes some sites (YouTube) still use, and the ones devices report
+_LANGUAGE_ALIASES = {'iw': 'he', 'in': 'id', 'ji': 'yi', 'jw': 'jv'}
+
+
+def _language(key):
+    """'en' for subtitle keys like 'en', 'en-GB' and 'en-orig' ('he' for YouTube's 'iw')."""
+    language = key.split('-')[0].lower()
+    return _LANGUAGE_ALIASES.get(language, language)
+
+
+def _subtitle_summary(info):
+    """The languages a video has subtitles in, and automatic captions (in its own language only)."""
+    manual = [k for k in info.get('subtitles') or {} if k != 'live_chat']
+    automatic = [k for k in info.get('automatic_captions') or {} if k.endswith('-orig')]
+    return {'languages': list(dict.fromkeys(map(_language, manual))),
+            'auto': list(dict.fromkeys(map(_language, automatic)))}
+
+
+def _subtitle_tracks(info, languages, auto):
+    """Subtitle keys to embed: per wanted language, subtitles people wrote, else (with ``auto``)
+    the site's automatic captions in the video's own language, never machine translations."""
+    manual = [k for k in info.get('subtitles') or {} if k != 'live_chat']
+    automatic = [k for k in info.get('automatic_captions') or {} if k.endswith('-orig')]
+    picked = []
+    for language in dict.fromkeys(_language(lang) for lang in languages):
+        key = next((k for k in manual if _language(k) == language), None)
+        if not key and auto:
+            key = next((k for k in automatic if _language(k) == language), None)
+        if key:
+            picked.append(key)
+    return picked
+
+
+def _write_subtitles(ydl, raw, keys, logger):
+    """Downloads the subtitles ``keys`` next to the video; returns them for Remux.c to embed.
+    Subtitles are a bonus: any failure only drops them."""
+    params = ydl.params
+    saved = {k: params.get(k) for k in ('skip_download', 'writesubtitles', 'writeautomaticsub',
+                                         'subtitleslangs', 'subtitlesformat')}
+    params.update(skip_download=True, writesubtitles=True, writeautomaticsub=True,
+                  subtitleslangs=[re.escape(k) for k in keys],  # yt-dlp reads these as patterns
+                  subtitlesformat='vtt/srt/best')
+    try:
+        ydl.format_selector = None
+        result = ydl.process_ie_result(copy.deepcopy(raw), download=True)
+    except Exception as e:
+        logger.warning(f'Subtitles skipped: {e}')
+        return []
+    finally:
+        params.update(saved)
+    tracks = []
+    for key in keys:
+        sub = (result.get('requested_subtitles') or {}).get(key) or {}
+        path = sub.get('filepath')
+        if not path or not os.path.exists(path):
+            continue
+        name = sub.get('name') or key
+        if key.endswith('-orig'):
+            name = name.removesuffix(' (Original)') + ' (auto-generated)'
+        tracks.append({'path': path, 'name': name,
+                       'lang': yt_dlp.utils.ISO639Utils.short2long(_language(key)) or 'und'})
+    return tracks
 
 # endregion
 
@@ -534,6 +610,7 @@ def _video_payload(info, url):
         webpage_url=info.get('webpage_url') or url,
         extractor=info.get('extractor_key'),
         playlist_url=_playlist_hint(url),
+        subtitles=_subtitle_summary(info),
         choices=_presets(info),
     )
 
@@ -582,6 +659,8 @@ def download(arg: str) -> str:
     ``extract``) or ``target`` ({kind: video|audio, max_height}) for playlist
     items, whose formats aren't known until they're extracted. ``playlist_index``
     picks one item of a link that holds several (e.g. a post with 4 videos).
+    ``subtitles`` ({languages, auto}, for videos) also fetches subtitles to embed;
+    the result lists them for Remux.c.
     """
     params = json.loads(arg)
     job_id = params['job_id']
@@ -604,6 +683,8 @@ def download(arg: str) -> str:
     def hook(d):
         if job['cancel']:
             raise Cancelled('Cancelled')
+        if job['status'] == 'subtitles':
+            return  # subtitle files aren't parts of the video, and are too small to show progress for
         if d['status'] == 'downloading':
             job['status'] = 'downloading'
             job['downloaded'] = d.get('downloaded_bytes') or 0
@@ -669,10 +750,17 @@ def download(arg: str) -> str:
                     files.append(path)
                 else:
                     raise RuntimeError(logger.lines[-1] if logger.lines else f'Format {fid} failed to download')
+        wanted = params.get('subtitles')
+        if wanted and chosen.get('kind', 'video') == 'video' and not job['cancel']:
+            keys = _subtitle_tracks(raw, wanted.get('languages') or [], wanted.get('auto'))
+            if keys:
+                job['status'] = 'subtitles'
+                subtitles[:] = _write_subtitles(ydl, raw, keys, logger)
         return raw
 
     processed = {}
     chosen = {}  # the preset a target resolved to
+    subtitles = []
 
     def remove_files():
         for f in files:
@@ -697,7 +785,8 @@ def download(arg: str) -> str:
             job['status'] = 'finished'
             return _ok(files=files, title=processed.get('title') or raw.get('title'),
                        id=processed.get('id') or raw.get('id'), key=_key(raw), artist=processed.get('artist'),
-                       date=processed.get('date'), url=processed.get('url'), choice=chosen or None)
+                       date=processed.get('date'), url=processed.get('url'), choice=chosen or None,
+                       subtitles=subtitles)
     except Exception as e:
         if isinstance(e, Cancelled) or job['cancel']:
             job['status'] = 'cancelled'

@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.squirrel.AppSettings
 import app.squirrel.DownloadItem
 import app.squirrel.DownloadStore
 import app.squirrel.FormatChoice
@@ -70,6 +71,13 @@ fun FormatDialog(
                     if (meta.isNotEmpty()) {
                         Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    subtitleNote(info, hasVideo = video.isNotEmpty())?.let { note ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Subtitles, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(4.dp))
+                            Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
         },
@@ -89,6 +97,15 @@ fun FormatDialog(
             }
         },
     )
+}
+
+/** "With English subtitles": what Settings adds to a video download of this one */
+private fun subtitleNote(info: VideoInfo, hasVideo: Boolean): String? {
+    if (!AppSettings.subtitles || !hasVideo) return null
+    val languages = AppSettings.subtitleLanguages.filter {
+        it in info.subtitleLanguages || AppSettings.autoCaptions && it in info.captionLanguages
+    }
+    return if (languages.isEmpty()) null else "With ${languageNames(languages)} subtitles"
 }
 
 /** "Downloaded Sep 27, 2026": downloading it again is still allowed. */

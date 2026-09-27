@@ -106,7 +106,7 @@ fun PlaylistSheet(
                 }
             }
 
-            // For each video, the best version up to this size, or just its audio
+            // For each video, the best version up to this size, or just its audio (as it is, or as MP3)
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                 DownloadTarget.ALL.forEachIndexed { index, target ->
                     SegmentedButton(

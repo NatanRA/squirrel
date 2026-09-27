@@ -10,7 +10,8 @@ BUILD="$ROOT/build"
 cd "$ROOT"
 
 [ -d Vendor/Python.xcframework ] && [ -d Vendor/app_packages ] || ./scripts/bootstrap.sh
-[ -d Vendor/FFmpeg.xcframework ] || ./scripts/build_ffmpeg.sh
+# (One from before MP3 support has no LAME licence and lacks what Remux.c now calls)
+[ -f Vendor/FFmpeg.xcframework/LICENSE-LAME ] || ./scripts/build_ffmpeg.sh
 xcodegen generate --quiet
 
 rm -rf "$BUILD/dd.noindex" "$BUILD/Payload" "$BUILD/Squirrel.ipa"

@@ -7,6 +7,7 @@ struct FormatPicker: View {
     /// Opens the playlist the link also names (`info.playlistURL`)
     var onWholePlaylist: ((String) -> Void)?
     @Environment(DownloadStore.self) private var store
+    @Environment(AppSettings.self) private var settings
     @Environment(\.dismiss) private var dismiss
     /// An earlier download of this video whose file is still there
     @State private var downloaded: DownloadItem?
@@ -25,6 +26,11 @@ struct FormatPicker: View {
                     Text([info.uploader, info.duration.map(formatDuration)].compactMap { $0 }.joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if let subtitleNote {
+                        Label(subtitleNote, systemImage: "captions.bubble")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -66,6 +72,15 @@ struct FormatPicker: View {
         }
         .frame(width: 460, height: 440)
         .onAppear { downloaded = store.downloaded(key: info.key, url: info.url) }
+    }
+
+    /// "With English subtitles": what Settings › General adds to a video download of this one
+    private var subtitleNote: String? {
+        guard settings.subtitles, !videoChoices.isEmpty else { return nil }
+        let names = AppSettings.subtitleLanguages
+            .filter { info.subtitleLanguages.contains($0) || settings.autoCaptions && info.captionLanguages.contains($0) }
+            .map { Locale.current.localizedString(forLanguageCode: $0) ?? $0 }
+        return names.isEmpty ? nil : "With \(names.formatted(.list(type: .and))) subtitles"
     }
 
     private func row(_ choice: FormatChoice) -> some View {

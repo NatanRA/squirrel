@@ -18,13 +18,18 @@ data class FormatChoice(
     val ext: String? = null,
     /** False when the platform's own players can't play it. */
     val playable: Boolean? = null,
+    /** "mp3": the audio is re-encoded after downloading */
+    val convert: String? = null,
 ) {
     val isAudio get() = kind == "audio"
 
     companion object {
         /** Stands in for a playlist item's choice until the bridge picks one from the video's formats. */
         fun placeholder(target: DownloadTarget) =
-            FormatChoice(id = "target", label = target.label, detail = "", formatIds = emptyList(), kind = target.kind)
+            FormatChoice(
+                id = "target", label = target.label, detail = "", formatIds = emptyList(), kind = target.kind,
+                convert = target.convert,
+            )
 
         fun from(json: JSONObject): FormatChoice? {
             val ids = json.optJSONArray("format_ids") ?: return null
@@ -36,26 +41,38 @@ data class FormatChoice(
                 kind = json.optString("kind", "video"),
                 ext = json.string("ext"),
                 playable = if (json.has("playable")) json.optBoolean("playable") else null,
+                convert = json.string("convert"),
             )
         }
     }
 }
 
 /**
- * A playlist's quality: the best version up to a height, or just the audio. The bridge turns it
- * into one of each video's own choices when that video downloads.
+ * A playlist's quality: the best version up to a height, or just the audio (as it is, or
+ * converted to MP3). The bridge turns it into one of each video's own choices when that video downloads.
  */
 @Serializable
-data class DownloadTarget(val kind: String, val maxHeight: Int? = null) {
-    val id get() = if (kind == "audio") "audio" else maxHeight?.let { "v$it" } ?: "best"
-    val label get() = if (kind == "audio") "Audio" else maxHeight?.let { "${it}p" } ?: "Best"
+data class DownloadTarget(
+    val kind: String,
+    val maxHeight: Int? = null,
+    /** "mp3": the audio converted to MP3 */
+    val convert: String? = null,
+) {
+    val id get() = convert ?: if (kind == "audio") "audio" else maxHeight?.let { "v$it" } ?: "best"
+    val label get() = if (convert == "mp3") "MP3" else if (kind == "audio") "Audio" else maxHeight?.let { "${it}p" } ?: "Best"
 
-    fun toJson(): JSONObject = JSONObject().put("kind", kind).apply { maxHeight?.let { put("max_height", it) } }
+    fun toJson(): JSONObject = JSONObject().put("kind", kind).apply {
+        maxHeight?.let { put("max_height", it) }
+        convert?.let { put("convert", it) }
+    }
 
     companion object {
         val BEST = DownloadTarget("video")
         val AUDIO = DownloadTarget("audio")
-        val ALL = listOf(BEST, DownloadTarget("video", 1080), DownloadTarget("video", 720), DownloadTarget("video", 480), AUDIO)
+        val MP3 = DownloadTarget("audio", convert = "mp3")
+        val ALL = listOf(
+            BEST, DownloadTarget("video", 1080), DownloadTarget("video", 720), DownloadTarget("video", 480), AUDIO, MP3,
+        )
     }
 }
 
@@ -70,6 +87,9 @@ data class VideoInfo(
     val key: String? = null,
     /** The playlist a YouTube link also names, for "Whole Playlist" */
     val playlistUrl: String? = null,
+    /** Languages it has subtitles in ("en"), and automatic captions in (its own language) */
+    val subtitleLanguages: List<String> = emptyList(),
+    val captionLanguages: List<String> = emptyList(),
 )
 
 data class PlaylistEntry(

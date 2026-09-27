@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
+import android.os.LocaleList
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import app.squirrel.Remuxer
@@ -28,6 +29,7 @@ import kotlinx.serialization.json.Json
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.Locale
 import java.util.UUID
 
 /**
@@ -80,6 +82,16 @@ class DownloadRepository(private val app: Application, private val scope: Corout
         get() = prefs.getBoolean(KEY_PLAYLIST_FOLDERS, true)
         set(value) = prefs.edit().putBoolean(KEY_PLAYLIST_FOLDERS, value).apply()
 
+    /** Settings › Subtitles: embed subtitles in videos, in the phone's languages ([subtitleLanguages]). */
+    var subtitles: Boolean
+        get() = prefs.getBoolean(KEY_SUBTITLES, false)
+        set(value) = prefs.edit().putBoolean(KEY_SUBTITLES, value).apply()
+
+    /** Settings › Subtitles: also the site's automatic captions, in the video's own language. */
+    var autoCaptions: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_CAPTIONS, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_CAPTIONS, value).apply()
+
     /** The playlist sheet's last quality, a [DownloadTarget.id]. */
     var playlistQuality: String
         get() = prefs.getString(KEY_PLAYLIST_QUALITY, null) ?: DownloadTarget.BEST.id
@@ -109,6 +121,7 @@ class DownloadRepository(private val app: Application, private val scope: Corout
         }
         val choices = result.optJSONArray("choices")?.objects()?.mapNotNull(FormatChoice::from).orEmpty()
         if (choices.isEmpty()) throw BridgeException("No downloadable formats found")
+        val available = result.optJSONObject("subtitles")
         return FetchResult.Video(
             VideoInfo(
                 url = result.string("webpage_url") ?: url,
@@ -119,6 +132,8 @@ class DownloadRepository(private val app: Application, private val scope: Corout
                 choices = choices,
                 key = result.string("key"),
                 playlistUrl = result.string("playlist_url"),
+                subtitleLanguages = available?.optJSONArray("languages")?.strings().orEmpty(),
+                captionLanguages = available?.optJSONArray("auto")?.strings().orEmpty(),
             ),
         )
     }
@@ -313,6 +328,10 @@ class DownloadRepository(private val app: Application, private val scope: Corout
             args.put("format_ids", JSONArray(item.choice.formatIds))
         }
         item.pick?.let { args.put("playlist_index", it) }
+        // Settings › Subtitles. A playlist item's choice isn't known yet: the bridge skips them for audio.
+        if (subtitles && (item.target != null || !item.choice.isAudio)) {
+            args.put("subtitles", JSONObject().put("languages", JSONArray(subtitleLanguages)).put("auto", autoCaptions))
+        }
 
         try {
             val result = PythonBridge.call("download", args)
@@ -323,26 +342,34 @@ class DownloadRepository(private val app: Application, private val scope: Corout
             // A playlist item's choice is only known now; it decides the container and where it's saved
             val choice = result.optJSONObject("choice")?.let(FormatChoice::from) ?: item.choice
 
-            // Merge or rewrap with FFmpeg into the container the format picker chose
             update(id) {
                 it.copy(state = DownloadState.MERGING, title = title, choice = choice, key = result.string("key") ?: it.key)
             }
-            val container = choice.ext?.takeIf(Remuxer::canWrite) ?: if (choice.isAudio) "m4a" else "mp4"
-            var finished = File(workDir, "final.$container")
-            try {
-                Remuxer.write(
-                    files, finished,
-                    mapOf(
-                        "title" to title,
-                        "artist" to result.string("artist").orEmpty(),
-                        "date" to result.string("date").orEmpty(),
-                        "comment" to (result.string("url") ?: item.sourceUrl),
-                    ),
-                )
-            } catch (e: BridgeException) {
-                // A format FFmpeg can't rewrap: keep the single file exactly as downloaded
-                if (files.size != 1) throw e
-                finished = files[0]
+            val metadata = mapOf(
+                "title" to title,
+                "artist" to result.string("artist").orEmpty(),
+                "date" to result.string("date").orEmpty(),
+                "comment" to (result.string("url") ?: item.sourceUrl),
+            )
+            var finished: File
+            if (choice.convert == "mp3") {
+                // Re-encoded from the best audio, whatever its format
+                finished = File(workDir, "final.mp3")
+                Remuxer.writeMp3(files[0], finished, metadata)
+            } else {
+                // Merge or rewrap with FFmpeg into the container the format picker chose, with any subtitles
+                val tracks = result.optJSONArray("subtitles")?.objects().orEmpty().mapNotNull { track ->
+                    track.string("path")?.let { Remuxer.Subtitle(File(it), track.string("lang"), track.string("name")) }
+                }
+                val container = choice.ext?.takeIf(Remuxer::canWrite) ?: if (choice.isAudio) "m4a" else "mp4"
+                finished = File(workDir, "final.$container")
+                try {
+                    Remuxer.write(files, finished, metadata, tracks)
+                } catch (e: BridgeException) {
+                    // A format FFmpeg can't rewrap: keep the single file exactly as downloaded
+                    if (files.size != 1) throw e
+                    finished = files[0]
+                }
             }
 
             // The folder chosen in Settings › Advanced; Movies/ or Music/Squirrel if there's none or it's gone.
@@ -448,6 +475,22 @@ class DownloadRepository(private val app: Application, private val scope: Corout
         private const val KEY_LIMIT = "limit"
         private const val KEY_PLAYLIST_FOLDERS = "playlistFolders"
         private const val KEY_PLAYLIST_QUALITY = "playlistQuality"
+        private const val KEY_SUBTITLES = "subtitles"
+        private const val KEY_AUTO_CAPTIONS = "autoCaptions"
+
+        /**
+         * "en", "pt": the languages in the phone's Settings › Languages, in order. From language
+         * tags, as [Locale.getLanguage] still says "iw" for Hebrew and "in" for Indonesian.
+         */
+        val subtitleLanguages: List<String>
+            get() {
+                val locales = LocaleList.getDefault()
+                val codes = List(locales.size()) { locales[it].toLanguageTag().substringBefore('-') }
+                return codes.filter { it.isNotEmpty() && it != "und" }.distinct().ifEmpty { listOf("en") }
+            }
+
+        /** "English" for "en", in the phone's language */
+        fun languageName(code: String): String = Locale.forLanguageTag(code).displayLanguage.ifEmpty { code }
     }
 }
 

@@ -31,6 +31,8 @@ data class FormatChoice(
     val ext: String? = null,
     /** False when only third-party players like VLC can play it. */
     val playable: Boolean? = null,
+    /** "mp3": the audio is re-encoded after downloading */
+    val convert: String? = null,
 ) {
     val isAudio get() = kind == "audio"
 
@@ -39,30 +41,41 @@ data class FormatChoice(
             val id = o.string("id") ?: return null
             val ids = (o["format_ids"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content } ?: return null
             return FormatChoice(id, o.string("label") ?: id, o.string("detail").orEmpty(), ids,
-                o.string("kind") ?: "video", o.string("ext"), o.bool("playable"))
+                o.string("kind") ?: "video", o.string("ext"), o.bool("playable"), o.string("convert"))
         }
 
         /** Stands in for a playlist item's choice until the engine picks one from the video's formats. */
-        fun placeholder(target: DownloadTarget) = FormatChoice("target", target.label, "", emptyList(), target.kind)
+        fun placeholder(target: DownloadTarget) =
+            FormatChoice("target", target.label, "", emptyList(), target.kind, convert = target.convert)
     }
 }
 
 /**
- * A playlist's quality: the best version up to a height, or just the audio. The engine turns it
- * into one of each video's own choices when that video downloads.
+ * A playlist's quality: the best version up to a height, or just the audio (as is, or converted
+ * to MP3). The engine turns it into one of each video's own choices when that video downloads.
  */
 @Serializable
-data class DownloadTarget(val kind: String, val maxHeight: Int? = null) {
-    val id get() = if (kind == "audio") "audio" else maxHeight?.let { "v$it" } ?: "best"
-    val label get() = if (kind == "audio") "Audio" else maxHeight?.let { "${it}p" } ?: "Best"
+data class DownloadTarget(
+    val kind: String,
+    val maxHeight: Int? = null,
+    /** "mp3": the audio converted to MP3 */
+    val convert: String? = null,
+) {
+    val id get() = convert ?: if (kind == "audio") "audio" else maxHeight?.let { "v$it" } ?: "best"
+    val label get() = if (convert == "mp3") "MP3" else if (kind == "audio") "Audio" else maxHeight?.let { "${it}p" } ?: "Best"
 
     val arguments
-        get() = if (maxHeight != null) jsonOf("kind" to kind, "max_height" to maxHeight) else jsonOf("kind" to kind)
+        get() = jsonOf(
+            *listOfNotNull("kind" to kind, maxHeight?.let { "max_height" to it }, convert?.let { "convert" to it }).toTypedArray(),
+        )
 
     companion object {
         val Best = DownloadTarget("video")
         val Audio = DownloadTarget("audio")
-        val all = listOf(Best, DownloadTarget("video", 1080), DownloadTarget("video", 720), DownloadTarget("video", 480), Audio)
+        val Mp3 = DownloadTarget("audio", convert = "mp3")
+        val all = listOf(
+            Best, DownloadTarget("video", 1080), DownloadTarget("video", 720), DownloadTarget("video", 480), Audio, Mp3,
+        )
     }
 }
 
@@ -80,6 +93,9 @@ data class VideoInfo(
     val key: String? = null,
     /** The playlist a YouTube link also names, for "Whole Playlist" */
     val playlistUrl: String? = null,
+    /** Languages it has subtitles in ("en"), and automatic captions in (its own language) */
+    val subtitleLanguages: List<String> = emptyList(),
+    val captionLanguages: List<String> = emptyList(),
 ) : FetchResult
 
 data class PlaylistEntry(
@@ -284,6 +300,8 @@ object DownloadStore {
         }
         val choices = (result["choices"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(FormatChoice::from) }
         if (choices.isEmpty()) throw EngineException("No downloadable formats found")
+        val subtitles = result["subtitles"] as? JsonObject
+        fun languages(key: String) = (subtitles?.get(key) as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
         return VideoInfo(
             url = result.string("webpage_url") ?: url,
             title = result.string("title") ?: "Untitled",
@@ -293,6 +311,8 @@ object DownloadStore {
             choices = choices,
             key = result.string("key"),
             playlistUrl = result.string("playlist_url"),
+            subtitleLanguages = languages("languages"),
+            captionLanguages = languages("auto"),
         )
     }
 
@@ -464,6 +484,7 @@ object DownloadStore {
                 add("format_ids" to item.choice.formatIds)
                 add("ext" to item.choice.ext.orEmpty())
                 add("audio" to item.choice.isAudio)
+                item.choice.convert?.let { add("convert" to it) }
             }
             item.pick?.let { add("playlist_index" to it) }
             item.playlist?.folder?.let { add("subfolder" to it) }
@@ -506,7 +527,7 @@ object DownloadStore {
         if (!state.isActive) return
         when (progress.string("status")) {
             "downloading" -> if (state != DownloadState.Downloading) update(id) { it.copy(state = DownloadState.Downloading) }
-            "merging" -> if (state != DownloadState.Merging) update(id) { it.copy(state = DownloadState.Merging) }
+            "merging", "converting" -> if (state != DownloadState.Merging) update(id) { it.copy(state = DownloadState.Merging) }
         }
     }
 

@@ -46,6 +46,7 @@ import app.squirrel.DownloadStore
 import app.squirrel.UpdateManager
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.Locale
 import javax.swing.JFileChooser
 
 private const val SOURCE_URL = "https://github.com/NatanRA/squirrel"
@@ -97,6 +98,18 @@ fun SettingsScreen(appVersion: String, onBack: () -> Unit) {
             ListItem(
                 headlineContent = { Text("Save each playlist in its own folder") },
                 trailingContent = { Switch(DownloadStore.playlistFolders, DownloadStore::updatePlaylistFolders) },
+            )
+            ListItem(
+                headlineContent = { Text("Add subtitles to videos") },
+                trailingContent = { Switch(AppSettings.subtitles, AppSettings::updateSubtitles) },
+            )
+            ListItem(
+                headlineContent = { Text("Include automatic captions") },
+                trailingContent = { Switch(AppSettings.autoCaptions, AppSettings::updateAutoCaptions, enabled = AppSettings.subtitles) },
+            )
+            Footer(
+                "In ${languageNames(AppSettings.subtitleLanguages)}, when a video has them. Automatic captions are the " +
+                    "site's own, in the video's language. The subtitles show in the player's subtitle menu.",
             )
 
             ListItem(
@@ -196,8 +209,8 @@ fun SettingsScreen(appVersion: String, onBack: () -> Unit) {
                 trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
             )
             Footer(
-                "Squirrel is free software under the GPL 3.0, built on yt-dlp (public domain), FFmpeg (LGPL 2.1) " +
-                    "and Python. It isn't affiliated with YouTube or any site it downloads from.",
+                "Squirrel is free software under the GPL 3.0, built on yt-dlp (public domain), FFmpeg (LGPL 2.1), " +
+                    "LAME (LGPL 2.0) and Python. It isn't affiliated with YouTube or any site it downloads from.",
             )
         }
     }
@@ -237,6 +250,12 @@ private fun ago(millis: Long): String {
         minutes < 48 * 60 -> "${minutes / 60} h ago"
         else -> "${minutes / (24 * 60)} days ago"
     }
+}
+
+/** "English and Portuguese" for ["en", "pt"]; the app is in English, so the names are too. */
+fun languageNames(codes: List<String>): String {
+    val names = codes.map { code -> Locale.forLanguageTag(code).getDisplayLanguage(Locale.ENGLISH).ifEmpty { code } }
+    return if (names.size < 3) names.joinToString(" and ") else names.dropLast(1).joinToString(", ") + ", and " + names.last()
 }
 
 private fun chooseFolder(current: File): File? {

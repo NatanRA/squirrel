@@ -366,7 +366,8 @@ struct DownloadRow: View {
                 caption(live?.summary ?? "Downloading…")
             }
         case .merging:
-            caption((live?.parts ?? 1) > 1 ? "Merging audio and video…" : "Finishing…")
+            caption(item.choice.convert == "mp3" ? "Converting to MP3…"
+                    : (live?.parts ?? 1) > 1 ? "Merging audio and video…" : "Finishing…")
         case .finished:
             VStack(alignment: .leading, spacing: 2) {
                 caption([item.choice.isAudio ? "Audio" : item.choice.label, location].joined(separator: " · "))

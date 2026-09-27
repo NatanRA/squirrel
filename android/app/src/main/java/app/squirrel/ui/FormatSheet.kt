@@ -1,5 +1,6 @@
 package app.squirrel.ui
 
+import android.icu.text.ListFormatter
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayCircleOutline
+import androidx.compose.material.icons.outlined.ClosedCaption
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -27,12 +29,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.squirrel.App
 import app.squirrel.data.DownloadItem
+import app.squirrel.data.DownloadRepository
 import app.squirrel.data.FormatChoice
 import app.squirrel.data.VideoInfo
 import java.text.DateFormat
@@ -54,6 +59,7 @@ fun FormatSheet(
 ) {
     val video = info.choices.filterNot { it.isAudio }
     val audio = info.choices.filter { it.isAudio }
+    val subtitleNote = remember(info) { subtitleNote(info, App.instance.repository) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         LazyColumn(contentPadding = PaddingValues(bottom = 16.dp), modifier = Modifier.navigationBarsPadding()) {
@@ -71,6 +77,19 @@ fun FormatSheet(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        subtitleNote?.let { note ->
+                            Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Outlined.ClosedCaption, null, Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    note, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -107,6 +126,15 @@ fun FormatSheet(
             }
         }
     }
+}
+
+/** "With English subtitles": what Settings › Subtitles adds to a video download of this one */
+private fun subtitleNote(info: VideoInfo, repository: DownloadRepository): String? {
+    if (!repository.subtitles || info.choices.all { it.isAudio }) return null
+    val names = DownloadRepository.subtitleLanguages
+        .filter { it in info.subtitleLanguages || repository.autoCaptions && it in info.captionLanguages }
+        .map(DownloadRepository::languageName)
+    return if (names.isEmpty()) null else "With ${ListFormatter.getInstance().format(names)} subtitles"
 }
 
 @Composable

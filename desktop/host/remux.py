@@ -3,7 +3,8 @@
 Remux.c is built together with a minimal, LGPL-only FFmpeg into one shared
 library (desktop/scripts/build_remux.sh) and called here through ctypes. It
 merges yt-dlp's separate video and audio parts, or rewraps a single file into a
-clean container, without re-encoding.
+clean container, without re-encoding, adding any subtitles as tracks. Audio can
+also be converted to MP3.
 """
 from __future__ import annotations
 
@@ -29,39 +30,80 @@ def _load():
     if _lib is None:
         path = os.environ.get('SQUIRREL_REMUX_LIB') or os.path.join(_RUNTIME, 'remux', _LIBRARY)
         lib = ctypes.CDLL(path)
-        lib.ytdl_remux.argtypes = [
-            ctypes.POINTER(ctypes.c_char_p), ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p,
-            ctypes.POINTER(ctypes.c_char_p), ctypes.c_int, ctypes.c_char_p, ctypes.c_size_t]
-        lib.ytdl_remux.restype = ctypes.c_int
+        strings, text, size = ctypes.POINTER(ctypes.c_char_p), ctypes.c_char_p, ctypes.c_size_t
+        lib.ytdl_remux_subtitled.argtypes = [
+            strings, ctypes.c_int, strings, strings, strings, ctypes.c_int, text, text,
+            strings, ctypes.c_int, text, size]
+        lib.ytdl_remux_subtitled.restype = ctypes.c_int
+        lib.ytdl_convert_to_mp3.argtypes = [text, text, strings, ctypes.c_int, text, size]
+        lib.ytdl_convert_to_mp3.restype = ctypes.c_int
         _lib = lib
     return _lib
 
 
-def remux(inputs, output, metadata=None):
-    """Merge/rewrap ``inputs`` into ``output``; the extension picks the container."""
+def _path(path):
+    return os.fsencode(path) if sys.platform != 'win32' else path.encode()
+
+
+def _strings(values):
+    """A C array of UTF-8 strings (NULL for None)."""
+    return (ctypes.c_char_p * max(len(values), 1))(*(v if v is None or isinstance(v, bytes) else v.encode() for v in values))
+
+
+def _tags(metadata):
+    tags = [x for k, v in (metadata or {}).items() if v for x in (k, v)]
+    return _strings(tags), len(tags) // 2
+
+
+def remux(inputs, output, metadata=None, subtitles=()):
+    """Merge/rewrap ``inputs`` into ``output``; the extension picks the container.
+
+    ``subtitles``: dicts with ``path``, and optionally ``lang`` (ISO 639-2) and ``name``.
+    """
     muxer = MUXERS.get(os.path.splitext(output)[1][1:].lower())
     if not muxer:
         raise RuntimeError(f"Can't write {os.path.splitext(output)[1]} files")
     lib = _load()
-    paths = (ctypes.c_char_p * len(inputs))(*(os.fsencode(p) if sys.platform != 'win32' else p.encode() for p in inputs))
-    tags = [x.encode() for k, v in (metadata or {}).items() if v for x in (k, v)]
-    tag_array = (ctypes.c_char_p * max(len(tags), 1))(*tags)
+    tags, tag_count = _tags(metadata)
     error = ctypes.create_string_buffer(512)
-    status = lib.ytdl_remux(paths, len(inputs), output.encode(), muxer.encode(),
-                            tag_array, len(tags) // 2, error, len(error))
+    status = lib.ytdl_remux_subtitled(
+        _strings([_path(p) for p in inputs]), len(inputs),
+        _strings([_path(s['path']) for s in subtitles]), _strings([s.get('lang') for s in subtitles]),
+        _strings([s.get('name') for s in subtitles]), len(subtitles),
+        _path(output), muxer.encode(), tags, tag_count, error, len(error))
     if status != 0:
         raise RuntimeError(f"Couldn't finish the file: {error.value.decode(errors='replace')}")
 
 
-def finish(files, out_dir, title, ext=None, audio=False, metadata=None):
-    """Turn yt-dlp's downloaded parts into one file in ``out_dir``; returns its path."""
+def convert_to_mp3(source, output, metadata=None):
+    lib = _load()
+    tags, tag_count = _tags(metadata)
+    error = ctypes.create_string_buffer(512)
+    status = lib.ytdl_convert_to_mp3(_path(source), _path(output), tags, tag_count, error, len(error))
+    if status != 0:
+        raise RuntimeError(f"Couldn't make the MP3: {error.value.decode(errors='replace')}")
+
+
+def finish(files, out_dir, title, ext=None, audio=False, metadata=None, subtitles=(), convert=None):
+    """Turn yt-dlp's downloaded parts into one file in ``out_dir``; returns its path.
+
+    ``convert='mp3'`` re-encodes a single audio download as MP3 instead of rewrapping it.
+    """
     if not files:
         raise RuntimeError('yt-dlp finished without producing a file')
     os.makedirs(out_dir, exist_ok=True)
+    if convert == 'mp3':
+        destination = unique_path(out_dir, title, 'mp3')
+        try:
+            convert_to_mp3(files[0], destination, metadata)
+        except Exception:
+            _remove(destination)
+            raise
+        return destination
     container = ext if ext and ext.lower() in MUXERS else ('m4a' if audio else 'mp4')
     destination = unique_path(out_dir, title, container)
     try:
-        remux(files, destination, metadata)
+        remux(files, destination, metadata, subtitles)
     except Exception:
         _remove(destination)  # the name unique_path reserved
         if len(files) != 1:

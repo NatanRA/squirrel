@@ -85,6 +85,7 @@ async function download({ url, title, thumbnail, choice }) {
   try {
     const result = await call('download', {
       url, title, job_id: jobId, format_ids: choice.format_ids, ext: choice.ext ?? '', audio: job.audio,
+      ...(choice.convert ? { convert: choice.convert } : {}),  // e.g. "mp3": re-encoded by the app's engine
     });
     if (result.ok) Object.assign(job, { status: 'finished', path: result.path, title: result.title ?? title });
     else if (result.cancelled) job.status = 'cancelled';
@@ -155,7 +156,9 @@ api.contextMenus.onClicked.addListener((info, tab) => {
 
 function updateProgress(job, progress) {
   if (!isActive(job) || !progress?.ok) return;
-  if (progress.status === 'merging') {
+  if (progress.status === 'converting') {
+    Object.assign(job, { status: 'merging', fraction: 1, summary: 'Converting to MP3…' });
+  } else if (progress.status === 'merging') {
     Object.assign(job, { status: 'merging', fraction: 1, summary: progress.parts > 1 ? 'Merging audio and video…' : 'Finishing…' });
   } else if (progress.status === 'downloading') {
     const { downloaded = 0, total = 0, speed = 0, part = 1, parts = 1 } = progress;

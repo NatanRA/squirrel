@@ -170,3 +170,51 @@ val Icons.Filled.PlayCircleOutline: ImageVector
     }
 
 private var _playCircleOutline: ImageVector? = null
+
+val Icons.Filled.Subtitles: ImageVector
+    get() {
+        if (_subtitles != null) {
+            return _subtitles!!
+        }
+        _subtitles = materialIcon(name = "Filled.Subtitles") {
+            materialPath {
+                moveTo(20.0f, 4.0f)
+                lineTo(4.0f, 4.0f)
+                curveToRelative(-1.1f, 0.0f, -2.0f, 0.9f, -2.0f, 2.0f)
+                verticalLineToRelative(12.0f)
+                curveToRelative(0.0f, 1.1f, 0.9f, 2.0f, 2.0f, 2.0f)
+                horizontalLineToRelative(16.0f)
+                curveToRelative(1.1f, 0.0f, 2.0f, -0.9f, 2.0f, -2.0f)
+                lineTo(22.0f, 6.0f)
+                curveToRelative(0.0f, -1.1f, -0.9f, -2.0f, -2.0f, -2.0f)
+                close()
+                moveTo(4.0f, 12.0f)
+                horizontalLineToRelative(4.0f)
+                verticalLineToRelative(2.0f)
+                lineTo(4.0f, 14.0f)
+                verticalLineToRelative(-2.0f)
+                close()
+                moveTo(14.0f, 18.0f)
+                lineTo(4.0f, 18.0f)
+                verticalLineToRelative(-2.0f)
+                horizontalLineToRelative(10.0f)
+                verticalLineToRelative(2.0f)
+                close()
+                moveTo(20.0f, 18.0f)
+                horizontalLineToRelative(-4.0f)
+                verticalLineToRelative(-2.0f)
+                horizontalLineToRelative(4.0f)
+                verticalLineToRelative(2.0f)
+                close()
+                moveTo(20.0f, 14.0f)
+                lineTo(10.0f, 14.0f)
+                verticalLineToRelative(-2.0f)
+                horizontalLineToRelative(10.0f)
+                verticalLineToRelative(2.0f)
+                close()
+            }
+        }
+        return _subtitles!!
+    }
+
+private var _subtitles: ImageVector? = null

@@ -35,7 +35,10 @@ targets:
       - framework: Vendor/FFmpeg.xcframework
         embed: false
       - sdk: libz.tbd
+      # FFmpeg's hardware AV1 decoding and HEVC encoding (Convert.c)
       - sdk: VideoToolbox.framework
+      - sdk: CoreMedia.framework
+      - sdk: CoreVideo.framework
       - sdk: JavaScriptCore.framework
     settings:
       base:

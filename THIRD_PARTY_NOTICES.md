@@ -10,14 +10,15 @@ repository show exactly which versions are bundled and where they are downloaded
 |---|---|---|
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Finding and downloading media | [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE) (public domain) |
 | [yt-dlp-ejs](https://github.com/yt-dlp/ejs) | Solving YouTube's JavaScript challenges | Unlicense, MIT and ISC |
-| [FFmpeg](https://ffmpeg.org) (libavformat, libavcodec, libswresample, libavutil) | Merging and rewrapping streams, embedding subtitles, converting audio to MP3 | [LGPL 2.1 or later](https://ffmpeg.org/legal.html) |
+| [FFmpeg](https://ffmpeg.org) (libavformat, libavcodec, libswresample, libavutil) | Merging and rewrapping streams, embedding subtitles, converting audio to MP3; on iOS, converting AV1 and VP9 videos to HEVC for Photos | [LGPL 2.1 or later](https://ffmpeg.org/legal.html) |
 | [LAME](https://lame.sourceforge.io) (libmp3lame) | Encoding MP3s | [LGPL 2.0 or later](https://lame.sourceforge.io/license.txt) |
 | [CPython](https://www.python.org) | Running yt-dlp | [PSF License 2.0](https://docs.python.org/3/license.html) |
 | [certifi](https://github.com/certifi/python-certifi) | Trusted certificate list | MPL 2.0 |
 
 **About FFmpeg and LAME:** Squirrel uses a minimal FFmpeg build with demuxers, muxers, parsers and
 bitstream filters, a few audio decoders and the resampler for MP3 conversion, text subtitle
-codecs, and LAME as its MP3 encoder. It has no GPL or non-free parts (`--disable-everything`, no
+codecs, and LAME as its MP3 encoder; on iOS also the VP9 and AV1 decoders and the VideoToolbox
+HEVC encoder. It has no GPL or non-free parts (`--disable-everything`, no
 `--enable-gpl`). The exact configuration and versions are in `ios/scripts/build_ffmpeg.sh`,
 `android/scripts/build_ffmpeg.sh`, `desktop/scripts/build_remux.sh` and
 `shared/native/build_lame.sh`, which download the unmodified sources from ffmpeg.org and

@@ -8,15 +8,18 @@ external JS runtime (deno/node/...), so instead:
   * YouTube's JS challenges are solved with the platform's JS engine, exposed
     to Python by the app as the module ``_host`` (see jsc_provider.py).
   * Separate video/audio streams are downloaded one at a time and merged by
-    the app with an embedded FFmpeg library (remux only, no re-encoding).
+    the app with an embedded FFmpeg library (remux only; the iOS app re-encodes
+    only AV1 and VP9, to HEVC for Photos).
 """
 from __future__ import annotations
 
+import concurrent.futures
 import copy
 import json
 import os
 import re
 import shutil
+import struct
 import threading
 import time
 import traceback
@@ -285,11 +288,14 @@ def _plays_natively(f):
             or (codec == 'VP9' and _config.get('vp9_decode')))  # Android: yes; iOS: no
 
 
-def _video_rank(f):
-    # H.264 first (plays and edits anywhere), then AV1 (much smaller files),
-    # then whatever else exists at that size.
-    preference = {'H.264': 3, 'HEVC': 2, 'AV1': 2, 'VP9': 1}.get(_codec(f.get('vcodec')), 0)
-    return (_plays_natively(f), preference, f.get('fps') or 0, f.get('protocol') == 'https', f.get('tbr') or 0)
+def _video_rank(f, hevc=()):
+    # What plays once saved (natively, or after the app converts it to HEVC), then
+    # H.264 (plays and edits anywhere), then AV1 (much smaller files), then
+    # whatever else exists at that size.
+    codec = _codec(f.get('vcodec'))
+    preference = {'H.264': 3, 'HEVC': 2, 'AV1': 2, 'VP9': 1}.get(codec, 0)
+    return (_plays_natively(f) or codec in hevc, preference, f.get('fps') or 0,
+            f.get('protocol') == 'https', f.get('tbr') or 0)
 
 
 def _container(video, audio=None):
@@ -306,16 +312,113 @@ def _audio_container(f):
     return {'AAC': 'm4a', 'ALAC': 'm4a', 'MP3': 'mp3', 'FLAC': 'flac'}.get(codec) or ('m4a' if ext in (None, 'mp4') else ext)
 
 
-def _presets(info):
+# Facebook and Instagram list their own direct MP4s (H.264, which Photos takes, while their
+# DASH video is often AV1 or VP9 only) without size or codecs. Their moov box, which says,
+# comes first in the file, so a small read or two fills them in.
+_PROBE_BYTES = 64 * 1024
+_PROBE_MAX_MOOV = 4 * 1024 * 1024
+_PROBE_MAX_FILES = 4
+
+
+def _mp4_boxes(data, start=0, end=None):
+    """(type, payload start, end) of each MP4 box in data[start:end]. The end is where the box
+    says it ends, which can be past what's in ``data``."""
+    end = len(data) if end is None else end
+    while start + 8 <= end:
+        size, kind = struct.unpack_from('>I4s', data, start)
+        header = 8
+        if size == 1 and start + 16 <= end:
+            size, header = struct.unpack_from('>Q', data, start + 8)[0], 16
+        elif size == 0:
+            size = end - start
+        if size < header:
+            return
+        yield kind, start + header, start + size
+        start += size
+
+
+def _mp4_find(data, start, end, *path):
+    """Payload bounds of the box at ``path`` (e.g. b'mdia', b'hdlr') inside data[start:end]."""
+    for kind, payload, box_end in _mp4_boxes(data, start, end):
+        if kind == path[0]:
+            box_end = min(box_end, end)
+            return (payload, box_end) if len(path) == 1 else _mp4_find(data, payload, box_end, *path[1:])
+    return None
+
+
+def _mp4_streams(moov):
+    """Video size and codec, and the audio codec, from a moov box's payload."""
+    found = {}
+    for kind, start, end in _mp4_boxes(moov):
+        end = min(end, len(moov))
+        if kind != b'trak':
+            continue
+        hdlr = _mp4_find(moov, start, end, b'mdia', b'hdlr')
+        stsd = _mp4_find(moov, start, end, b'mdia', b'minf', b'stbl', b'stsd')
+        if not hdlr or not stsd:
+            continue
+        handler = moov[hdlr[0] + 8:hdlr[0] + 12]  # after version, flags and pre_defined
+        entry = moov[stsd[0] + 12:stsd[0] + 16].decode('latin-1')  # the first sample entry's type
+        if handler == b'vide' and 'vcodec' not in found:
+            found['vcodec'] = entry
+            tkhd = _mp4_find(moov, start, end, b'tkhd')
+            if tkhd and tkhd[1] - tkhd[0] >= 84:
+                width, height = struct.unpack_from('>II', moov, tkhd[1] - 8)  # 16.16 fixed point, last
+                found.update(width=width >> 16, height=height >> 16)
+        elif handler == b'soun' and 'acodec' not in found:
+            found['acodec'] = entry
+    return found
+
+
+def _probe_direct_file(ydl, f):
+    """Fills in the size and codecs of a direct MP4 from its moov box, if that comes first."""
+    def read(first, last):
+        headers = {**(f.get('http_headers') or {}), 'Range': f'bytes={first}-{last}'}
+        request = yt_dlp.networking.Request(f['url'], headers=headers, extensions={'timeout': 8})
+        with ydl.urlopen(request) as response:
+            total = (response.headers.get('Content-Range') or '').rpartition('/')[2]
+            return response.read(last - first + 1), int(total) if total.isdigit() else None
+
+    try:
+        data, total = read(0, _PROBE_BYTES - 1)
+        moov = next(((start, end) for kind, start, end in _mp4_boxes(data) if kind == b'moov'), None)
+        if not moov or moov[1] > _PROBE_MAX_MOOV:
+            return  # at the end of the file (not worth fetching), or not an MP4
+        if moov[1] > len(data):
+            data, _ = read(0, moov[1] - 1)  # the rest of it
+        streams = _mp4_streams(data[moov[0]:moov[1]])
+    except Exception:
+        return  # left out, as before
+    if streams.get('width') and streams.get('height'):
+        f.update(width=streams['width'], height=streams['height'],
+                 vcodec=streams.get('vcodec'), acodec=streams.get('acodec') or 'none')
+        if total and not f.get('filesize'):
+            f['filesize'] = total
+
+
+def _probe_direct_files(ydl, formats):
+    unknown = [f for f in formats
+               if not _resolution(f) and f.get('vcodec') is None and f.get('acodec') is None
+               and f.get('url') and f.get('protocol') in ('https', 'http') and f.get('ext') in ('mp4', 'mov', 'm4v')]
+    if unknown:
+        with concurrent.futures.ThreadPoolExecutor(len(unknown[:_PROBE_MAX_FILES])) as pool:
+            list(pool.map(lambda f: _probe_direct_file(ydl, f), unknown[:_PROBE_MAX_FILES]))
+
+
+def _presets(info, ydl=None, hevc=()):
     """Build a short list of download choices.
 
     yt-dlp downloads each chosen format separately and the app remuxes them
     into one file with FFmpeg (no re-encoding), so any codec works; choices
-    prefer what Apple's players can play and flag the rest.
+    prefer what Apple's players can play and flag the rest. ``hevc`` names the
+    codecs the app converts to HEVC ("AV1", "VP9"): the iOS app does, for Photos.
+    With ``ydl``, direct files that list no size or codecs are looked into.
     """
     formats = [f for f in (info.get('formats') or [info]) if f.get('url') or f.get('manifest_url')]
     # storyboards and other junk
     formats = [f for f in formats if f.get('ext') not in ('mhtml',) and f.get('protocol') != 'mhtml']
+    if ydl:
+        _probe_direct_files(ydl, formats)
 
     audio_only = [f for f in formats if f.get('vcodec') == 'none' and f.get('acodec') != 'none']
     video_only = [f for f in formats if f.get('acodec') == 'none' and f.get('vcodec') != 'none' and _resolution(f)]
@@ -335,24 +438,31 @@ def _presets(info):
             return
         fps = f' {int(f["fps"])}fps' if (f.get('fps') or 0) > 30 else ''
         name = {2160: '4K', 4320: '8K'}.get(res, f'{res}p')
-        note = None if _plays_natively(f) else 'Plays in VLC'
+        plays = _plays_natively(f)
+        converts = _codec(f.get('vcodec')) in hevc  # even when it plays: Photos takes neither AV1 nor VP9
+        note = 'Converted for Photos' if converts else None if plays else 'Plays in VLC'
         choices[key] = {'id': key, 'label': name + fps, 'kind': 'video', 'height': res, 'ext': container,
-                        'format_ids': ids, 'playable': note is None,
+                        'format_ids': ids, 'playable': plays or converts,
                         'detail': _detail(container.upper(), _codec(f.get('vcodec')), *extra, note)}
+        if converts:
+            choices[key]['convert'] = 'hevc'
+
+    def best_first(fs):
+        return sorted(fs, key=lambda f: (_label(_resolution(f)), *_video_rank(f, hevc)), reverse=True)
 
     # 1. Single files with audio and video, best per resolution
-    for f in sorted(progressive, key=lambda f: (_label(_resolution(f)), *_video_rank(f)), reverse=True):
+    for f in best_first(progressive):
         add(f, [f['format_id']], _container(f), _size_text(f))
 
     # 2. Separate video + audio, merged by the app, for resolutions not covered above
     if best_audio:
-        for f in sorted(video_only, key=lambda f: (_label(_resolution(f)), *_video_rank(f)), reverse=True):
+        for f in best_first(video_only):
             add(f, [f['format_id'], best_audio['format_id']], _container(f, best_audio),
                 _size_text(f, best_audio))
 
     # 3. Silent videos (e.g. GIF-style posts) have no audio to merge
     if not audio_only and not progressive:
-        for f in sorted(video_only, key=lambda f: (_label(_resolution(f)), *_video_rank(f)), reverse=True):
+        for f in best_first(video_only):
             add(f, [f['format_id']], _container(f), 'No audio', _size_text(f))
 
     video = sorted(choices.values(), key=lambda c: c['height'], reverse=True)
@@ -598,7 +708,7 @@ def _playlist_payload(info, url):
 # endregion
 
 
-def _video_payload(info, url):
+def _video_payload(info, url, ydl=None, hevc=()):
     return dict(
         type='video',
         id=info.get('id'),
@@ -611,7 +721,7 @@ def _video_payload(info, url):
         extractor=info.get('extractor_key'),
         playlist_url=_playlist_hint(url),
         subtitles=_subtitle_summary(info),
-        choices=_presets(info),
+        choices=_presets(info, ydl, hevc),
     )
 
 
@@ -619,11 +729,13 @@ def extract(arg: str) -> str:
     """Video details and download choices; with ``playlists``, a playlist's items instead.
 
     Playlist replies are opt-in so an older browser extension (which expects
-    ``choices``) keeps working against a newer engine.
+    ``choices``) keeps working against a newer engine. ``hevc`` lists the codecs
+    the app converts to HEVC (see ``_presets``).
     """
     params = json.loads(arg)
     url = params['url']
     playlists = bool(params.get('playlists'))
+    hevc = params.get('hevc') or ()
     logger = _Logger()
     opts = _base_opts(logger)
     if playlists:
@@ -647,7 +759,7 @@ def extract(arg: str) -> str:
             if info.get('_type') in ('url', 'url_transparent'):
                 # A flat-extracted single item
                 info = ydl.extract_info(info['url'], download=False, ie_key=info.get('ie_key'))
-            return _ok(**_video_payload(info, url))
+            return _ok(**_video_payload(info, url, ydl, hevc))
     except Exception as e:
         return _err(e, logger)
 
@@ -660,7 +772,8 @@ def download(arg: str) -> str:
     items, whose formats aren't known until they're extracted. ``playlist_index``
     picks one item of a link that holds several (e.g. a post with 4 videos).
     ``subtitles`` ({languages, auto}, for videos) also fetches subtitles to embed;
-    the result lists them for Remux.c.
+    the result lists them for Remux.c. ``hevc`` is as for ``extract``, for resolving
+    a ``target``.
     """
     params = json.loads(arg)
     job_id = params['job_id']
@@ -724,7 +837,7 @@ def download(arg: str) -> str:
         if target:
             ydl.format_selector = None  # yt-dlp's default, just to list the formats
             info = ydl.process_ie_result(copy.deepcopy(raw), download=False)
-            chosen.update(_resolve_target(_presets(info), target))
+            chosen.update(_resolve_target(_presets(info, ydl, params.get('hevc') or ()), target))
             format_ids = chosen['format_ids']
         job['parts'] = len(format_ids)
         for i, fid in enumerate(format_ids):

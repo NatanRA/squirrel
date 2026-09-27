@@ -263,6 +263,9 @@ struct LiveProgress {
     var eta: Double?
     var part = 1
     var parts = 1
+    /// Converting the finished file for Photos (see `Remuxer.convertToHEVC`), and how far it is
+    var converting = false
+    var converted: Double = 0
 
     var fraction: Double? {
         guard total > 0 else { return nil }
@@ -319,6 +322,8 @@ final class DownloadStore {
     @ObservationIgnored private var albums: [String: Task<String?, Never>] = [:]
     /// The Photos access question asked when downloads were added, in case it's still on screen
     @ObservationIgnored private var photosAccess: Task<PHAuthorizationStatus, Never>?
+    /// Downloads being converted for Photos, so they can be stopped
+    @ObservationIgnored private var conversions: [UUID: ConversionProgress] = [:]
 
     var waitingCount: Int { items.count { $0.state == .queued } }
 
@@ -366,7 +371,8 @@ final class DownloadStore {
 
     /// A video with its download choices, or a playlist's items.
     func fetch(_ url: String) async throws -> FetchResult {
-        let result = try await PythonRuntime.shared.call("extract", ["url": url, "playlists": true])
+        let result = try await PythonRuntime.shared.call(
+            "extract", ["url": url, "playlists": true, "hevc": Self.photosConversions])
         if result["type"] as? String == "playlist" {
             let pageURL = result["webpage_url"] as? String ?? url
             let entries = (result["entries"] as? [[String: Any]] ?? []).enumerated().map {
@@ -448,6 +454,7 @@ final class DownloadStore {
             save()
             updateBackground()
         } else if running.contains(id) {
+            conversions[id]?.cancel()
             Task { _ = try? await PythonRuntime.shared.call("cancel", ["job_id": id.uuidString]) }
         }
     }
@@ -584,6 +591,11 @@ final class DownloadStore {
 
     // MARK: - Photos
 
+    /// The codecs converted to HEVC on their way to Photos ("AV1", "VP9"), for the format list to say so
+    private static var photosConversions: [String] {
+        SaveSettings.videosToPhotos ? Remuxer.convertibleCodecs.map { $0.uppercased() }.sorted() : []
+    }
+
     /// Asks for Photos access while the app is open, once for everything added together: adding
     /// videos, or full access to put a playlist in an album. Declining that still saves the videos.
     private func requestPhotosAccess(_ level: PHAccessLevel) {
@@ -666,14 +678,46 @@ final class DownloadStore {
     }
 
     /// Why Photos can't take this video, if it can't.
-    private static func photosIncompatibility(of url: URL, choice: FormatChoice) -> String? {
+    private static func photosIncompatibility(of url: URL, codec: String?, choice: FormatChoice) -> String? {
         guard ["mp4", "mov", "m4v"].contains(url.pathExtension.lowercased()) else {
             return "Photos can't store .\(url.pathExtension) videos."
         }
-        if choice.playable == false {
+        if let codec, Remuxer.photosRefuses.contains(codec) {
+            // What this iPhone can't convert, like AV1 without hardware to decode it
+            return "Photos doesn't take \(Remuxer.displayName(ofCodec: codec)) videos, so it's in Files."
+        }
+        if codec != "h264" && codec != "hevc" && choice.playable == false {
             return "Photos can't play this format on this device."
         }
         return nil
+    }
+
+    /// Re-encodes a download as HEVC, which Photos takes, in place of the original file.
+    private func convertForPhotos(_ id: UUID, _ source: URL, title: String, workDir: URL) async throws -> URL {
+        let progress = ConversionProgress()
+        conversions[id] = progress
+        live[id]?.converting = true
+        updateBackground()
+        let poller = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(400))
+                self?.live[id]?.converted = progress.fraction
+                self?.updateBackground()
+            }
+        }
+        defer {
+            poller.cancel()
+            conversions[id] = nil
+        }
+        let converted = workDir.appendingPathComponent("converted.mp4")
+        try await Remuxer.convertToHEVC(source, to: converted, progress: progress)
+        // Under the original's name, unless that isn't .mp4
+        let destination = source.pathExtension.lowercased() == "mp4" ? source : Self.uniqueDestination(title: title, ext: "mp4")
+        try Self.move(converted, ontoReserved: destination)
+        if destination != source {
+            try? FileManager.default.removeItem(at: source)
+        }
+        return destination
     }
 
     // MARK: - Background
@@ -698,6 +742,8 @@ final class DownloadStore {
         if covered.count == 1, let first {
             let subtitle = switch first.state {
             case .downloading: live[first.id]?.summary ?? "Downloading…"
+            case .merging where live[first.id]?.converting == true:
+                "Converting for Photos… \(Int((live[first.id]?.converted ?? 0) * 100))%"
             case .merging: first.choice.convert == "mp3" ? "Converting to MP3…" : "Finishing…"
             default: "Starting…"
             }
@@ -725,6 +771,7 @@ final class DownloadStore {
         paused = true
         for id in running where items.first(where: { $0.id == id })?.state != .queued {
             interrupted.insert(id)
+            conversions[id]?.cancel()
             Task { _ = try? await PythonRuntime.shared.call("cancel", ["job_id": id.uuidString]) }
         }
     }
@@ -753,6 +800,7 @@ final class DownloadStore {
         if let target = item.target {
             // The bridge picks this video's choice for the playlist's quality
             args["target"] = target.arguments
+            args["hevc"] = Self.photosConversions
         } else {
             args["format_ids"] = item.choice.formatIDs
         }
@@ -811,12 +859,26 @@ final class DownloadStore {
                     title: title, ext: Self.fileExtension(for: files[0], isAudio: choice.isAudio))
                 try Self.move(files[0], ontoReserved: destination)
             }
+            var photosNote: String?
+            let toPhotos = !choice.isAudio && SaveSettings.videosToPhotos
+            var codec = toPhotos ? Remuxer.videoCodec(of: destination) : nil
+            if let source = codec, Remuxer.convertibleCodecs.contains(source) {
+                // Photos takes neither AV1 nor VP9, even from iPhones that play AV1
+                do {
+                    destination = try await convertForPhotos(id, destination, title: title, workDir: workDir)
+                    codec = "hevc"
+                } catch let error as BridgeError where error.cancelled {
+                    try? FileManager.default.removeItem(at: destination)
+                    throw error
+                } catch {
+                    photosNote = "Couldn't convert it for Photos, so it's in Files. \(error.localizedDescription)"
+                }
+            }
             var fileName: String? = destination.lastPathComponent
             var savedToPhotos = false
             var photosAssetID: String?
-            var photosNote: String?
-            if !choice.isAudio && SaveSettings.videosToPhotos {
-                if let reason = Self.photosIncompatibility(of: destination, choice: choice) {
+            if toPhotos && photosNote == nil {
+                if let reason = Self.photosIncompatibility(of: destination, codec: codec, choice: choice) {
                     photosNote = reason
                 } else {
                     do {
@@ -832,6 +894,8 @@ final class DownloadStore {
                         }
                         savedToPhotos = true
                         if !keepCopy { fileName = nil }
+                    } catch let error as PHPhotosError where error.code == .invalidResource {
+                        photosNote = "Photos couldn't import this video, so it's in Files."
                     } catch {
                         photosNote = error.localizedDescription  // the file stays in the app
                     }

@@ -1,8 +1,11 @@
 import Foundation
+import os
+import VideoToolbox
 
-/// Swift face of Remux.c (embedded FFmpeg). Merges yt-dlp's separate video/audio
+/// Swift face of Remux.c and Convert.c (embedded FFmpeg). Merges yt-dlp's separate video/audio
 /// downloads and rewraps single files into a clean container with correct duration
-/// headers, adding any subtitles as tracks. Also converts audio to MP3.
+/// headers, adding any subtitles as tracks. Also converts audio to MP3, and the only videos
+/// it re-encodes are the ones Photos won't take (AV1, VP9), to HEVC.
 enum Remuxer {
     /// A subtitle file (WebVTT or SubRip) to add to a video as a track.
     struct Subtitle {
@@ -12,6 +15,14 @@ enum Remuxer {
         /// What the player's subtitle menu shows, like "English"
         let name: String?
     }
+
+    /// Video codecs Photos refuses, by FFmpeg's names, even on iPhones that play them (AV1)
+    static let photosRefuses: Set<String> = ["av1", "vp9", "vp8"]
+
+    /// What `convertToHEVC` can read here: VP9 anywhere (decoded in software), and AV1 where
+    /// VideoToolbox decodes it (A17 Pro, M-series and later)
+    static let convertibleCodecs: Set<String> =
+        VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1) ? ["vp9", "av1"] : ["vp9"]
 
     /// FFmpeg muxer for each output extension the app writes.
     private static let muxers = [
@@ -68,14 +79,43 @@ enum Remuxer {
         }
     }
 
+    /// FFmpeg's name for the codec of the file's video ("h264", "hevc", "av1", "vp9"), nil without one.
+    static func videoCodec(of url: URL) -> String? {
+        var codec = [CChar](repeating: 0, count: 32)
+        guard ytdl_video_codec(url.path, &codec, codec.count) == 0 else { return nil }
+        return String(decoding: codec.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }
+
+    /// "AV1" for "av1", for messages.
+    static func displayName(ofCodec codec: String) -> String {
+        ["h264": "H.264", "hevc": "HEVC"][codec] ?? codec.uppercased()
+    }
+
+    /// Re-encodes an AV1 or VP9 video as HEVC in an MP4 at `output`, copying its audio and tags.
+    /// Throws a cancelled `BridgeError` once `progress` is cancelled.
+    static func convertToHEVC(_ input: URL, to output: URL, progress: ConversionProgress) async throws {
+        let inputPath = input.path
+        let outputPath = output.path
+
+        try await run(failure: nil, cancelled: { progress.isCancelled }) { error, size in
+            withExtendedLifetime(progress) {
+                ytdl_convert_to_hevc(inputPath, outputPath, { context, fraction in
+                    Unmanaged<ConversionProgress>.fromOpaque(context!).takeUnretainedValue().report(fraction) ? 1 : 0
+                }, Unmanaged.passUnretained(progress).toOpaque(), error, size)
+            }
+        }
+    }
+
     /// Key/value pairs for Remux.c, leaving out empty values.
     private static func tags(_ metadata: [String: String]) -> [String] {
         metadata.filter { !$0.value.isEmpty }.flatMap { [$0.key, $0.value] }
     }
 
-    /// Runs a Remux.c call off the main thread; a non-zero status throws its error message.
+    /// Runs a Remux.c call off the main thread; a non-zero status throws its error message, after
+    /// `failure` if given, and marked cancelled when `cancelled` says it was.
     private static func run(
-        failure: String, _ call: @escaping @Sendable (UnsafeMutablePointer<CChar>, Int) -> Int32
+        failure: String?, cancelled: @escaping @Sendable () -> Bool = { false },
+        _ call: @escaping @Sendable (UnsafeMutablePointer<CChar>, Int) -> Int32
     ) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -85,7 +125,8 @@ enum Remuxer {
                     continuation.resume()
                 } else {
                     let message = String(decoding: error.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
-                    continuation.resume(throwing: BridgeError(message: "\(failure): \(message)"))
+                    continuation.resume(throwing: BridgeError(
+                        message: failure.map { "\($0): \(message)" } ?? message, cancelled: cancelled()))
                 }
             }
         }
@@ -103,5 +144,25 @@ enum Remuxer {
         let copies = strings.map { $0.map { strdup($0)! } }
         defer { copies.forEach { free($0) } }
         return body(copies.map { $0.map { UnsafePointer($0) } })
+    }
+}
+
+/// How far a conversion is, and whether to stop it: written from FFmpeg's thread, read by the app.
+final class ConversionProgress: Sendable {
+    private let state = OSAllocatedUnfairLock(initialState: (fraction: 0.0, cancelled: false))
+
+    var fraction: Double { state.withLock { $0.fraction } }
+    var isCancelled: Bool { state.withLock { $0.cancelled } }
+
+    func cancel() {
+        state.withLock { $0.cancelled = true }
+    }
+
+    /// Records how far it is; true once it should stop.
+    fileprivate func report(_ fraction: Double) -> Bool {
+        state.withLock {
+            $0.fraction = fraction
+            return $0.cancelled
+        }
     }
 }

@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import struct
 import sys
 import tempfile
 import types
@@ -375,6 +376,135 @@ class DownloadTests(BridgeTestCase):
         self.assertFalse(result['ok'])
         self.assertIn('playlist', result['error'])
         self.assertEqual(os.listdir(out), [])
+
+
+class ConversionTests(unittest.TestCase):
+    """Videos the iOS app converts to HEVC for Photos (``hevc``), which takes neither AV1 nor VP9."""
+
+    def setUp(self):
+        ytdl_bridge.configure(json.dumps({'av1_decode': False, 'vp9_decode': False}))
+
+    @staticmethod
+    def dash(*videos):
+        """Video-only formats at 1080p, one per codec, and AAC audio."""
+        formats = [{'format_id': fid, 'url': f'https://example.invalid/{fid}.mp4', 'ext': 'mp4', 'vcodec': codec,
+                    'acodec': 'none', 'width': 1080, 'height': 1920, 'fps': 30} for fid, codec in videos]
+        formats.append({'format_id': 'a', 'url': 'https://example.invalid/a.m4a', 'ext': 'm4a',
+                        'vcodec': 'none', 'acodec': 'mp4a.40.2', 'abr': 128})
+        return {'formats': formats}
+
+    def test_converted_choices_say_so(self):
+        choice = ytdl_bridge._presets(self.dash(('vp9', 'vp09.00.40.08')), hevc=['VP9'])[0]
+        self.assertEqual((choice['convert'], choice['playable']), ('hevc', True))
+        self.assertIn('Converted for Photos', choice['detail'])
+
+    def test_without_conversion_vp9_plays_in_vlc(self):
+        choice = ytdl_bridge._presets(self.dash(('vp9', 'vp09.00.40.08')))[0]
+        self.assertNotIn('convert', choice)
+        self.assertFalse(choice['playable'])
+        self.assertIn('Plays in VLC', choice['detail'])
+
+    def test_av1_that_plays_is_still_converted(self):
+        ytdl_bridge.configure(json.dumps({'av1_decode': True}))
+        self.addCleanup(ytdl_bridge.configure, json.dumps({'av1_decode': False}))
+        choice = ytdl_bridge._presets(self.dash(('av1', 'av01.0.08M.08')), hevc=['AV1', 'VP9'])[0]
+        self.assertEqual(choice['convert'], 'hevc')
+
+    def test_convertible_beats_unconvertible(self):
+        # No AV1 decoding, so only the VP9 one can reach Photos
+        info = self.dash(('av1', 'av01.0.08M.08'), ('vp9', 'vp09.00.40.08'))
+        self.assertEqual(ytdl_bridge._presets(info, hevc=['VP9'])[0]['format_ids'], ['vp9', 'a'])
+
+    def test_h264_beats_converting(self):
+        info = self.dash(('vp9', 'vp09.00.40.08'), ('h264', 'avc1.640028'))
+        choice = ytdl_bridge._presets(info, hevc=['VP9'])[0]
+        self.assertEqual(choice['format_ids'], ['h264', 'a'])
+        self.assertNotIn('convert', choice)
+
+    def test_best_target_takes_converted_1080p(self):
+        info = self.dash(('vp9', 'vp09.00.40.08'))
+        info['formats'].append({'format_id': 'v720', 'url': 'https://example.invalid/v720.mp4', 'ext': 'mp4',
+                                'vcodec': 'avc1.64001f', 'acodec': 'none', 'width': 720, 'height': 1280})
+        choice = ytdl_bridge._resolve_target(ytdl_bridge._presets(info, hevc=['VP9']), {'kind': 'video'})
+        self.assertEqual(choice['id'], 'v1080')
+
+
+def box(kind, *children, payload=b''):
+    body = payload + b''.join(children)
+    return struct.pack('>I4s', 8 + len(body), kind) + body
+
+
+def mp4_start(width, height, padding=0):
+    """The start of a faststart MP4 like Facebook's: its moov box (sound track first, then H.264
+    video) before the media. ``padding`` makes the moov box longer than one read."""
+    def trak(handler, entry, size=(0, 0)):
+        tkhd = box(b'tkhd', payload=bytes(76) + struct.pack('>II', size[0] << 16, size[1] << 16))
+        hdlr = box(b'hdlr', payload=bytes(8) + handler + bytes(12))
+        stsd = box(b'stsd', payload=struct.pack('>II', 0, 1) + box(entry, payload=bytes(8)))
+        return box(b'trak', tkhd, box(b'mdia', hdlr, box(b'minf', box(b'stbl', stsd))))
+    moov = box(b'moov', box(b'mvhd', payload=bytes(100)), trak(b'soun', b'mp4a'),
+               trak(b'vide', b'avc1', (width, height)), box(b'free', payload=bytes(padding)))
+    return box(b'ftyp', payload=b'isom' + bytes(4)) + moov + box(b'mdat', payload=bytes(1000))
+
+
+class FakeFetcher:
+    """Stands in for YoutubeDL.urlopen, serving byte ranges of canned files."""
+
+    def __init__(self, files):
+        self.files = files
+        self.requests = []
+
+    def urlopen(self, request):
+        first, last = map(int, request.headers['Range'].removeprefix('bytes=').split('-'))
+        self.requests.append((request.url, first, last))
+        data = self.files[request.url]
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        response.headers = {'Content-Range': f'bytes {first}-{last}/{len(data)}'}
+        response.read.side_effect = lambda size: data[first:first + size]
+        return response
+
+
+class ProbeTests(unittest.TestCase):
+    URL = 'https://example.invalid/hd.mp4'
+
+    def setUp(self):
+        ytdl_bridge.configure(json.dumps({'av1_decode': True, 'vp9_decode': False}))
+        self.addCleanup(ytdl_bridge.configure, json.dumps({'av1_decode': False}))
+
+    def info(self):
+        """Like Facebook: AV1-only DASH video, and its own direct file listing no size or codecs."""
+        return {'formats': [
+            {'format_id': 'hd', 'url': self.URL, 'ext': 'mp4', 'protocol': 'https'},
+            {'format_id': 'v1080', 'url': 'https://example.invalid/v1080.mp4', 'ext': 'mp4', 'protocol': 'https',
+             'vcodec': 'av01.0.08M.08', 'acodec': 'none', 'width': 1080, 'height': 1920},
+            {'format_id': 'a', 'url': 'https://example.invalid/a.m4a', 'ext': 'm4a', 'protocol': 'https',
+             'vcodec': 'none', 'acodec': 'mp4a.40.5', 'abr': 74},
+        ]}
+
+    def direct_choice(self, fetcher):
+        choices = ytdl_bridge._presets(self.info(), fetcher, hevc=['AV1', 'VP9'])
+        return next((c for c in choices if c['format_ids'] == ['hd']), None)
+
+    def test_direct_file_is_offered(self):
+        data = mp4_start(720, 1280)
+        choice = self.direct_choice(FakeFetcher({self.URL: data}))
+        self.assertEqual((choice['label'], choice['playable']), ('720p', True))
+        self.assertNotIn('convert', choice)
+        self.assertIn('H.264', choice['detail'])
+        self.assertIn(ytdl_bridge._human(len(data)), choice['detail'])
+
+    def test_long_moov_box_is_read_to_its_end(self):
+        fetcher = FakeFetcher({self.URL: mp4_start(720, 1280, padding=100_000)})
+        self.assertEqual(self.direct_choice(fetcher)['label'], '720p')
+        self.assertEqual(len(fetcher.requests), 2)
+
+    def test_unreadable_file_is_left_out(self):
+        self.assertIsNone(self.direct_choice(FakeFetcher({self.URL: b'<html>' * 100})))
+
+    def test_nothing_is_fetched_without_ydl(self):
+        choices = ytdl_bridge._presets(self.info())
+        self.assertNotIn(['hd'], [c['format_ids'] for c in choices])
 
 
 if __name__ == '__main__':

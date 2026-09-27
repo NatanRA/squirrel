@@ -94,7 +94,7 @@ struct SettingsView: View {
         } header: {
             Text("Saving")
         } footer: {
-            Text("Audio goes to Files › Squirrel, or the folder chosen in Advanced. So do videos Photos can't play, like 4K AV1 on older iPhones. Deleting a download also deletes it from Photos; Remove from List keeps it there.")
+            Text("Photos takes neither AV1 nor VP9, which some sites use for their best quality, so those videos are converted to HEVC first. Audio goes to Files › Squirrel, or the folder chosen in Advanced; so do AV1 videos on iPhones that can't decode AV1. Deleting a download also deletes it from Photos; Remove from List keeps it there.")
         }
     }
 

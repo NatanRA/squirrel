@@ -10,8 +10,11 @@ BUILD="$ROOT/build"
 cd "$ROOT"
 
 [ -d Vendor/Python.xcframework ] && [ -d Vendor/app_packages ] || ./scripts/bootstrap.sh
-# (One from before MP3 support has no LAME licence and lacks what Remux.c now calls)
-[ -f Vendor/FFmpeg.xcframework/LICENSE-LAME ] || ./scripts/build_ffmpeg.sh
+# (One from before MP3 support has no LAME licence and lacks what Remux.c now calls, and one from
+# before converting for Photos lacks the HEVC encoder Convert.c uses)
+[ -f Vendor/FFmpeg.xcframework/LICENSE-LAME ] \
+    && grep -aq ff_hevc_videotoolbox_encoder Vendor/FFmpeg.xcframework/ios-arm64/libffmpeg.a \
+    || ./scripts/build_ffmpeg.sh
 xcodegen generate --quiet
 
 rm -rf "$BUILD/dd.noindex" "$BUILD/Payload" "$BUILD/Squirrel.ipa"

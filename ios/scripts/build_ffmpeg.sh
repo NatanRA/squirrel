@@ -2,11 +2,13 @@
 # Build a minimal FFmpeg for iOS as Vendor/FFmpeg.xcframework.
 #
 # What remuxing needs (demuxers, muxers, parsers and bitstream filters), plus
-# the audio decoders, resampler and LAME encoder for MP3 conversion and the
-# text subtitle codecs for embedding subtitles. No network and no GPL parts, so
-# it stays small and LGPL. The app uses it to merge yt-dlp's separate
-# video/audio streams, rewrap single files into clean MP4/M4A and make MP3s
-# (see shared/native/Remux.c).
+# the audio decoders, resampler and LAME encoder for MP3 conversion, the text
+# subtitle codecs for embedding subtitles, and the AV1 and VP9 decoders and
+# Apple's hardware HEVC encoder for converting videos Photos won't take. No
+# network and no GPL parts, so it stays small and LGPL. The app uses it to
+# merge yt-dlp's separate video/audio streams, rewrap single files into clean
+# MP4/M4A and make MP3s (see shared/native/Remux.c), and to convert AV1 and VP9
+# to HEVC (shared/native/Convert.c).
 set -euo pipefail
 
 FFMPEG_VERSION="${FFMPEG_VERSION:-9.0.2}"
@@ -30,6 +32,11 @@ PARSERS="h264,hevc,av1,vp8,vp9,aac,aac_latm,mpegaudio,opus,vorbis,flac,mjpeg,png
 BSFS="aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb,extract_extradata,vp9_superframe,vp9_superframe_split,av1_frame_merge,av1_frame_split,dump_extradata,null"
 DECODERS="aac,opus,vorbis,mp3float,flac,webvtt,subrip"   # audio to convert to MP3; subtitles for MP4
 ENCODERS="libmp3lame,movtext"  # movtext is mov_text, MP4's subtitle format
+# iOS only: converting AV1 and VP9 to HEVC for Photos. VP9 decodes in software;
+# FFmpeg's AV1 decoder only drives hardware (the hwaccel)
+DECODERS+=",vp9,av1"
+ENCODERS+=",hevc_videotoolbox"
+HWACCELS="av1_videotoolbox"
 
 build() {   # build <sdk> <target> <prefix>
     local sdk=$1 target=$2 prefix=$3
@@ -55,7 +62,12 @@ build() {   # build <sdk> <target> <prefix>
         --enable-demuxer="$DEMUXERS" --enable-muxer="$MUXERS" \
         --enable-parser="$PARSERS" --enable-bsf="$BSFS" \
         --enable-decoder="$DECODERS" --enable-encoder="$ENCODERS" --enable-libmp3lame \
+        --enable-hwaccel="$HWACCELS" --enable-videotoolbox --enable-pthreads \
         --enable-zlib >"$dir/configure.log" 2>&1) || { tail -30 "$dir/configure.log"; exit 1; }
+    # --disable-autodetect would quietly leave these out; conversion needs them
+    grep -q "^#define CONFIG_HEVC_VIDEOTOOLBOX_ENCODER 1" "$dir/config_components.h" \
+        && grep -q "^#define HAVE_THREADS 1" "$dir/config.h" \
+        || { echo "error: FFmpeg configured without the VideoToolbox encoder or threads" >&2; exit 1; }
     echo "==> Building for $sdk"
     make -C "$dir" -j"$(sysctl -n hw.ncpu)" install >"$dir/make.log" 2>&1 || { tail -30 "$dir/make.log"; exit 1; }
     # One static library per platform is easier to embed than three

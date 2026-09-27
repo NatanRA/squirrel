@@ -13,7 +13,7 @@ links to the desktop app.
 | UI | SwiftUI | Jetpack Compose (Material 3) | SwiftUI | Compose Desktop (Material 3) |
 | Python | CPython 3.14 via [Python-Apple-support](https://github.com/beeware/Python-Apple-support) | CPython 3.14 via [Chaquopy](https://chaquo.com/chaquopy/) | CPython 3.14 via [python-build-standalone](https://github.com/astral-sh/python-build-standalone) | Same |
 | YouTube's JS challenges | JavaScriptCore | V8 via Jetpack JavaScriptEngine | JavaScriptCore | [QuickJS-ng](https://github.com/quickjs-ng/quickjs) |
-| Merging streams, subtitles, MP3 | Embedded FFmpeg (+ LAME) | Same FFmpeg code via JNI | Same FFmpeg code as a library | Same |
+| Merging streams, subtitles, MP3 | Embedded FFmpeg (+ LAME), which also turns AV1/VP9 into HEVC for Photos | Same FFmpeg code via JNI | Same FFmpeg code as a library | Same |
 | Where files go | Photos (videos), Files › Squirrel (audio) | Movies/Squirrel (Gallery), Music/Squirrel | ~/Downloads/Squirrel (you can change it) | Same |
 | Getting links in | Paste, **share sheet**, `squirrel://` URL | Paste, **share sheet**, `squirrel://` URL | Paste, menu bar, **right-click** in browsers, **Share menu**, Services | Paste, **right-click** in browsers |
 | Package | Ad-hoc signed IPA (~25 MB) | APK per CPU type (~21 MB) | Disk image per CPU type | Installer (Inno Setup) |
@@ -47,6 +47,7 @@ shared/pybridge/   Python used by every app
   tests/             Offline tests: python3 -m unittest discover shared/pybridge/tests
 shared/native/     C used by every app
   Remux.c            Merges/rewraps streams into one file with FFmpeg's libraries, adds subtitles, makes MP3s
+  Convert.c          Re-encodes AV1/VP9 video as HEVC for Photos (iOS: Apple's hardware encoder)
   build_lame.sh      Builds LAME, the MP3 encoder, for each platform's FFmpeg
 ios/               Xcode project (XcodeGen), Swift sources, build scripts
 android/           Gradle project, Kotlin sources, JNI glue, build scripts
@@ -78,9 +79,14 @@ shells out to:
   It also rewraps single files, which fixes broken duration headers and turns HLS/MPEG-TS
   downloads into normal MP4s. Every codec is available, including YouTube's 1440p and 4K
   (AV1/VP9 only). Each app reports which codecs its device can play, and the rest are labelled
-  "Plays in VLC". Files are tagged with title, artist, year and source URL. The only encoding
-  is for text: subtitles become MP4's own subtitle tracks, and audio becomes MP3 on request
-  (with LAME, at about 190 kbps). That adds about 1 MB to each app.
+  "Plays in VLC". Files are tagged with title, artist, year and source URL. Other than converting
+  for Photos (below), the only encoding is for text: subtitles become MP4's own subtitle tracks,
+  and audio becomes MP3 on request (with LAME, at about 190 kbps). That adds about 1 MB to each app.
+- **Photos and AV1/VP9.** Photos takes neither, even on iPhones that play AV1, and Facebook and
+  Instagram often have their best quality in nothing else. So the iOS app's FFmpeg also has the
+  VP9 and AV1 decoders, and `Convert.c` re-encodes those videos to HEVC with the phone's hardware
+  encoder (at twice the source bitrate) on their way to Photos: VP9 on any iPhone, AV1 where the
+  hardware decodes it (A17 Pro and later). It's the only time Squirrel re-encodes video.
 
 The desktop apps use the same pieces rather than a separate yt-dlp GUI, so every platform picks
 formats and names files the same way. There, the bridge runs in a separate Python process: the
@@ -245,6 +251,9 @@ release, run the workflow from the Actions tab with that release's tag.
   tools that rewrite the bundle ID, such as AltStore, disable this feature.
 - **Google may refuse sign-in** in the in-app browser. If so, use **Import cookies.txt**.
 - Cover art isn't embedded yet.
+- **Converting for Photos** hasn't been timed on an iPhone yet. The Simulator has no hardware HEVC
+  encoder, so it converts far slower than a phone will (a 29 s 1080p reel: about a minute there,
+  2 s on an M5 Mac), and it can't decode AV1, so only VP9 conversion has run in the app itself.
 - The Mac app isn't notarized and the Windows installer isn't code-signed, so both show a warning
   the first time.
 - Debug builds log yt-dlp's verbose output: the system log on iOS, and logcat `python.stdout` on

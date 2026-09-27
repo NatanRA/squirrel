@@ -29,6 +29,16 @@ static bool is_quicktime(const char *format) {
     return strcmp(format, "mp4") == 0 || strcmp(format, "ipod") == 0 || strcmp(format, "mov") == 0;
 }
 
+/** The usual pixel format of a VP9 profile: 8-bit 4:2:0 (0), 4:4:4 (1), and their 10-bit kinds (2, 3) */
+static enum AVPixelFormat vp9_pixel_format(int profile) {
+    switch (profile) {
+    case AV_PROFILE_VP9_1: return AV_PIX_FMT_YUV444P;
+    case AV_PROFILE_VP9_2: return AV_PIX_FMT_YUV420P10;
+    case AV_PROFILE_VP9_3: return AV_PIX_FMT_YUV444P10;
+    default: return AV_PIX_FMT_YUV420P;
+    }
+}
+
 static void set_error(char *error, size_t size, const char *what, int code) {
     char reason[AV_ERROR_MAX_STRING_SIZE] = "";
     if (code < 0) {
@@ -281,6 +291,11 @@ int ytdl_remux_subtitled(const char *const *inputs, int input_count, const char 
                 // FFmpeg's default for HEVC in MP4 is hev1, which Apple's players and Photos
                 // refuse ("PHPhotosErrorDomain error 3302"). hvc1 plays everywhere.
                 out_stream->codecpar->codec_tag = MKTAG('h', 'v', 'c', '1');
+            }
+            if (stream->codecpar->codec_id == AV_CODEC_ID_VP9 && out_stream->codecpar->format == AV_PIX_FMT_NONE) {
+                // Builds without a VP9 decoder can't tell the pixel format, and without it MP4's
+                // vpcC box is written empty and nothing can open the file. The parser read the profile.
+                out_stream->codecpar->format = vp9_pixel_format(stream->codecpar->profile);
             }
             out_stream->time_base = stream->time_base;
             av_dict_copy(&out_stream->metadata, stream->metadata, 0);  // e.g. audio language

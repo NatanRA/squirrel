@@ -365,6 +365,11 @@ struct DownloadRow: View {
                 }
                 caption(live?.summary ?? "Downloading…")
             }
+        case .merging where live?.converting == true:
+            VStack(alignment: .leading, spacing: 3) {
+                ProgressView(value: live?.converted ?? 0)
+                caption("Converting for Photos…")
+            }
         case .merging:
             caption(item.choice.convert == "mp3" ? "Converting to MP3…"
                     : (live?.parts ?? 1) > 1 ? "Merging audio and video…" : "Finishing…")

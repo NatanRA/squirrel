@@ -113,6 +113,11 @@ fun SettingsScreen(appVersion: String, onBack: () -> Unit) {
             )
 
             ListItem(
+                headlineContent = { Text("Paste copied links automatically") },
+                supportingContent = { Text("A link you've copied is filled in when you open Squirrel.") },
+                trailingContent = { Switch(Background.autoPaste, Background::updateAutoPaste) },
+            )
+            ListItem(
                 headlineContent = { Text("Keep running when the window is closed") },
                 supportingContent = {
                     Text("Squirrel stays in the notification area by the clock, so downloads carry on. Click its icon to open it, or right-click to quit.")

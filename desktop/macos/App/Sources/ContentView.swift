@@ -228,7 +228,7 @@ struct ContentView: View {
 
     /// A link on the clipboard is most likely what the user opened the app for.
     private func pasteLinkFromClipboard() {
-        guard urlText.isEmpty, let text = NSPasteboard.general.string(forType: .string),
+        guard LinkInbox.autoPaste, urlText.isEmpty, let text = NSPasteboard.general.string(forType: .string),
               let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
               ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
         urlText = url.absoluteString

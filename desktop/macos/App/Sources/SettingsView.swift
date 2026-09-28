@@ -27,6 +27,7 @@ private struct GeneralSettings: View {
     @AppStorage(MenuBar.shownKey) private var showMenuBar = true
     @AppStorage(Background.keepRunningKey) private var keepRunning = true
     @AppStorage(Notifier.enabledKey) private var notify = true
+    @AppStorage(LinkInbox.autoPasteKey) private var autoPaste = true
 
     /// "English and Portuguese": the languages subtitles are fetched in
     private static var languageNames: String {
@@ -53,6 +54,12 @@ private struct GeneralSettings: View {
                 }
                 Toggle("Save each playlist in its own folder", isOn: $playlistFolders)
                 Toggle("Notify me when downloads finish", isOn: $notify)
+            }
+            Section {
+                Toggle("Paste copied links automatically", isOn: $autoPaste)
+            } footer: {
+                Text("A link you've copied is filled in when you open Squirrel's window or its menu bar item.")
+                    .foregroundStyle(.secondary)
             }
             Section {
                 Toggle("Add subtitles to videos", isOn: $settings.subtitles)

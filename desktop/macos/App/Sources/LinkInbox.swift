@@ -9,6 +9,10 @@ import Observation
 final class LinkInbox {
     static let shared = LinkInbox()
 
+    /// Settings › General: fill in a copied link when the window or the menu bar item opens
+    static let autoPasteKey = "paste.automatic"
+    static var autoPaste: Bool { UserDefaults.standard.object(forKey: autoPasteKey) as? Bool ?? true }
+
     /// A link the main window hasn't picked up yet
     var pending: String?
     /// A playlist loaded elsewhere (the menu bar) for the main window to show, without loading it again

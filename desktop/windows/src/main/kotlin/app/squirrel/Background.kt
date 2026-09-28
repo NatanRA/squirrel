@@ -16,8 +16,13 @@ import kotlin.concurrent.thread
  */
 object Background {
     private const val KEEP_RUNNING = "keepRunning"
+    private const val AUTO_PASTE = "autoPaste"
 
     var keepRunning by mutableStateOf(Preferences[KEEP_RUNNING] != "false")
+        private set
+
+    /** Fill in a copied link when the window opens (Settings) */
+    var autoPaste by mutableStateOf(Preferences[AUTO_PASTE] != "false")
         private set
 
     /** Whether the main window is showing; closing it only hides it while [keepRunning] is on */
@@ -33,6 +38,11 @@ object Background {
     fun updateKeepRunning(value: Boolean) {
         keepRunning = value
         Preferences[KEEP_RUNNING] = value.toString()
+    }
+
+    fun updateAutoPaste(value: Boolean) {
+        autoPaste = value
+        Preferences[AUTO_PASTE] = value.toString()
     }
 
     fun showWindow() {

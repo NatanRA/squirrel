@@ -106,7 +106,7 @@ fun MainScreen(onOpenSettings: () -> Unit) {
         focus.requestFocus()
         // A link on the clipboard is most likely what the user opened the app for
         val text = clipboard.getText()?.text?.trim()
-        if (url.isEmpty() && Background.pendingLink == null && text != null && Regex("^https?://\\S+$").matches(text)) url = text
+        if (Background.autoPaste && url.isEmpty() && Background.pendingLink == null && text != null && Regex("^https?://\\S+$").matches(text)) url = text
     }
 
     // A link from the browser extension

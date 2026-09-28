@@ -140,7 +140,7 @@ struct MenuBarPanel: View {
         .onAppear {
             LinkInbox.shared.openMainWindow = { openWindow(id: "main") }
             // A copied link is most likely what the menu was opened for
-            if link.isEmpty, info == nil, let copied = NSPasteboard.general.string(forType: .string),
+            if LinkInbox.autoPaste, link.isEmpty, info == nil, let copied = NSPasteboard.general.string(forType: .string),
                let found = LinkInbox.firstLink(in: copied) {
                 link = found
             }
